@@ -11,18 +11,22 @@ from skmultiflow.meta import OzaBaggingClassifier
 from skmultiflow.lazy import KNNClassifier
 from skmultiflow.trees import HoeffdingTreeClassifier
 from multiprocessing import Process
-from threading import Thread
+from threading import Thread, Lock  
 from pathlib import Path
 from addict import Dict
 from csv import DictWriter
 
 
-def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path):
+def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path, mutex: Lock):
     # Test January of 'test_year' with all subsequent month by 'test_year'
     for test_year in range(_from, _to):
         print(f"Started testing from {test_year} to {_to}")
         
-        for m, mn in MONTHS[1:]:
+        months = MONTHS
+        if test_year == _from:
+            months = MONTHS[1:]
+
+        for m, mn in months:
             print(f"Started testing month {mn} from {test_year}")
             
             # Get files for 'test_year/BASE/m'
@@ -44,6 +48,7 @@ def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path):
             if filename.exists():
                 mode = 'a' 
 
+            mutex.acquire()
             # Save clf_metrics into a CSV
             with open(filename, mode) as fd:
                 header = clf_metrics.keys()
@@ -54,46 +59,51 @@ def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path):
                     writer.writeheader()
 
                 writer.writerow(clf_metrics)
+            mutex.release()
 
 def test(_from: int, _to: int, base: str):
+    filename = Path(f"results/{_from}_{_to}_{base}.csv")
+
+    if not filename.parent.exists():
+        filename.parent.mkdir()
+
+    print(f"Metrics will be saved at results/{filename.name}")
+
+    clf = HoeffdingTreeClassifier()
+    
+    # Get files for '_from/BASE/01'
+    train_files = get_files(_from, base, '01')
+    
+    # Get first day of first month for partial fit
+    X, y = get_X_y(train_files['files'][0])
+
+    # Partial fit with first instance within a list
+    clf = clf.partial_fit([X[0]], [y[0]], classes=[0, 1])
+    
+    # Train the classifier with the remaining files
+    print(f"Started training {clf.__class__.__name__} for year {_from}")
+    for f in train_files['files'][1:]:
+        X, y = get_X_y(f)
+        for i in range(len(X)):
+            clf = clf.partial_fit([X[i]], [y[i]])
+    print(f"Done training {clf.__class__.__name__} for year {_from}")
+
     for train_year in range(_from, _to):
-        filename = Path(f"results/{_from}_{_to}_{base}.csv")
-
-        if not filename.parent.exists():
-            filename.parent.mkdir()
-
-        print(f"Metrics will be saved at results/{filename.name}")
-
-        clf = HoeffdingTreeClassifier()
-        
-        # Get files for 'train_year/BASE/01'
-        train_files = get_files(train_year, base, '01')
-        
-        # Get first day of first month for partial fit
-        X, y = get_X_y(train_files['files'][0])
-
-        # Partial fit with first instance within a list
-        clf = clf.partial_fit([X[0]], [y[0]], classes=[0, 1])
-        
-        # Train the classifier with the remaining files
-        print(f"Started training {clf.__class__.__name__} for year {train_year}")
-        for f in train_files['files'][1:]:
-            X, y = get_X_y(f)
-            for i in range(len(X)):
-                clf = clf.partial_fit([X[i]], [y[i]])
-        print(f"Done training {clf.__class__.__name__} for year {train_year}")
-
-        Thread(target=_test_model, args=(clf, train_year, _to, base, filename)).start()
+        mutex = Lock()
+        Thread(target=_test_model, args=(clf, train_year, _to, base, filename, mutex)).start()
         
 
 if __name__ == '__main__':
-    BASE = 'VIEGAS'
+    BASE = 'ORUNADA'
     processes = [
         Process(target=test, args=(2010, 2012, BASE)),
         Process(target=test, args=(2011, 2013, BASE)),
         Process(target=test, args=(2012, 2014, BASE)),
-    ]
-    
-    for p in processes:
-        p.start()
-        print(f"Started process {p}")
+    ]   
+    try:    
+        for p in processes:
+            p.start()
+            print(f"Started process {p}")
+    except KeyboardInterrupt:
+        for p in processes:
+            p.kill()
