@@ -1,8 +1,6 @@
-from constants import DATASETS, MONTHS
+from constants import DATASETS
 from pathlib import Path
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 
 __all__ = ['get_files', 'get_X_y', 'mean_accuracy', 'std_accuracy', 'clf_predict', 'show_results', 'mean']
@@ -19,9 +17,20 @@ def get_files(year: int, base: str, month: str, ext="csv") -> list:
 
 def get_X_y(csv: Path) -> tuple:
     """ Get and returns (X, y) from a given CSV from MAWI lab dataset """
+    unwanted_columns = [
+        'MAWILAB_taxonomy', 'MAWILAB_label', 
+        'MAWILAB_nbDetectors', 'MAWILAB_distance',
+    ]
+
     df = pd.read_csv(csv)
     df = df.sample(frac=1)
-    df = df.drop(['MAWILAB_taxonomy', 'MAWILAB_label', 'MAWILAB_nbDetectors', 'MAWILAB_distance'], axis=1)
+    df = df.drop(unwanted_columns, axis=1)
+
+    if 'VIEGAS' in csv.name:
+        df = df.drop(['VIEGAS_numberOfDifferentDestinations_A', 'VIEGAS_numberOfDifferentServices_A'], axis=1)
+    elif 'ORUNADA' in csv.name:
+        df = df.drop(['ORUNADA_numberOfDifferentDestinations', 'ORUNADA_numberOfDifferentServices'], axis=1)
+        
     X = df.drop(['class'], axis=1).to_numpy()
     y = df['class'].to_numpy()
     return X, y
@@ -120,10 +129,3 @@ def show_results(results: dict) -> dict:
     }
     
     return ret
-
-
-def plot_fnr_fpr(metrics: dict) -> None:
-    data = {'months': list(map(lambda x: x[0], MONTHS)), 'fpr': metrics['fpr'], 'fnr': metrics['fnr']}
-    sns.lineplot(x='months', y='fnr', data=data)
-    sns.lineplot(x='months', y='fpr', data=data)
-    plt.show()
