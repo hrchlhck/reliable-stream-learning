@@ -1,4 +1,3 @@
-from sys import argv
 from constants import MONTHS
 
 from utils import (
@@ -6,42 +5,40 @@ from utils import (
     clf_predict, show_results
 )
 
+from log import get_logger
+
 from skmultiflow.meta import AdaptiveRandomForestClassifier
 from skmultiflow.meta import OzaBaggingClassifier
 from skmultiflow.lazy import KNNClassifier
 from skmultiflow.trees import HoeffdingTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from multiprocessing import Process
 from threading import Thread, Lock  
 from pathlib import Path
-from addict import Dict
 from csv import DictWriter
 
+LOGGER = get_logger(Path(__file__).name)
+
+get_cls_name = lambda obj: obj.__class__.__name__
 
 def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path, mutex: Lock):
     # Test January of 'test_year' with all subsequent month by 'test_year'
     for test_year in range(_from, _to):
-        print(f"Started testing from {test_year} to {_to}")
-        
-        months = MONTHS
-        if test_year == _from:
-            months = MONTHS[1:]
+        LOGGER.info(f"Started testing {get_cls_name(clf)} from {test_year} to {_to - 1}")
 
-        for m, mn in months:
-            print(f"Started testing month {mn} from {test_year}")
+        for m, mn in MONTHS:
+            LOGGER.info(f"Started testing {get_cls_name(clf)} at {mn}/{test_year}")
             
             # Get files for 'test_year/BASE/m'
             test_files = get_files(test_year, base, m)
             
             # Test and save results
-            result_p_month = clf_predict(clf, test_files['files'])
+            result_p_month = clf_predict(clf, test_files['files'], LOGGER)
             
             # Parsing results
             clf_metrics = show_results(result_p_month)
             clf_metrics['month'] = mn
             clf_metrics['test_year'] = test_year
-
-            # # Storing the results
-            # results[_from][test_year][m] = clf_metrics
 
             # Check if file exists and change mode
             mode = 'w'
@@ -59,17 +56,16 @@ def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path, mu
                     writer.writeheader()
 
                 writer.writerow(clf_metrics)
+                LOGGER.debug(clf_metrics)
             mutex.release()
 
-def test(_from: int, _to: int, base: str):
-    filename = Path(f"results/{_from}_{_to}_{base}.csv")
+def test(_from: int, _to: int, base: str, classifier: object):
+    filename = Path(f"results/{get_cls_name(classifier)}_{_from}_{_to - 1}_{base}.csv")
 
     if not filename.parent.exists():
         filename.parent.mkdir()
 
-    print(f"Metrics will be saved at results/{filename.name}")
-
-    clf = HoeffdingTreeClassifier()
+    LOGGER.info(f"Metrics will be saved at results/{filename.name}")
     
     # Get files for '_from/BASE/01'
     train_files = get_files(_from, base, '01')
@@ -78,32 +74,46 @@ def test(_from: int, _to: int, base: str):
     X, y = get_X_y(train_files['files'][0])
 
     # Partial fit with first instance within a list
-    clf = clf.partial_fit([X[0]], [y[0]], classes=[0, 1])
+    if not isinstance(classifier, RandomForestClassifier):
+        classifier = classifier.partial_fit([X[0]], [y[0]], classes=[0, 1])
     
     # Train the classifier with the remaining files
-    print(f"Started training {clf.__class__.__name__} for year {_from}")
+    LOGGER.info(f"Started training {get_cls_name(classifier)} for year {_from}")
+    LOGGER.debug(f"Classifier parameters: {classifier.get_params()}")
     for f in train_files['files'][1:]:
         X, y = get_X_y(f)
-        for i in range(len(X)):
-            clf = clf.partial_fit([X[i]], [y[i]])
-    print(f"Done training {clf.__class__.__name__} for year {_from}")
+        LOGGER.debug(f"Training {get_cls_name(classifier)} with file {f}")
+        if not isinstance(classifier, RandomForestClassifier):
+            for i in range(len(X)):
+                classifier = classifier.partial_fit([X[i]], [y[i]])
+        else:
+            classifier = classifier.fit(X, y)
+        LOGGER.debug(f"Finished training {get_cls_name(classifier)} with file {f}")
+    LOGGER.info(f"Done training {get_cls_name(classifier)} for year {_from}")
 
     for train_year in range(_from, _to):
         mutex = Lock()
-        Thread(target=_test_model, args=(clf, train_year, _to, base, filename, mutex)).start()
+        Thread(target=_test_model, args=(classifier, train_year, _to, base, filename, mutex)).start()
         
 
 if __name__ == '__main__':
-    BASE = 'ORUNADA'
-    processes = [
-        Process(target=test, args=(2010, 2012, BASE)),
-        Process(target=test, args=(2011, 2013, BASE)),
-        Process(target=test, args=(2012, 2014, BASE)),
-    ]   
+    BASE = 'VIEGAS'
+    ESTIMATOR = KNNClassifier()
+    FROM = 2010
+    TO = 2012
+    CLASSIFIERS = [
+        OzaBaggingClassifier(random_state=42),
+        AdaptiveRandomForestClassifier(),
+        RandomForestClassifier(n_estimators=100, max_depth=4, criterion='entropy'),
+        HoeffdingTreeClassifier()
+    ]
+
+    processes = [Process(target=test, args=(FROM, TO, BASE, c)) for c in CLASSIFIERS] 
+
     try:    
         for p in processes:
             p.start()
-            print(f"Started process {p}")
+            LOGGER.info(f"Started process {p}")
     except KeyboardInterrupt:
         for p in processes:
             p.kill()

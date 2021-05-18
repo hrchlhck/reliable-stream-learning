@@ -1,5 +1,7 @@
 from constants import DATASETS
 from pathlib import Path
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import confusion_matrix
 import pandas as pd
 
 
@@ -50,10 +52,11 @@ def std_accuracy(results: dict) -> float:
     std = (sum((i - mean) ** 2 for i in x) / (len(x) - 1)) ** 0.5
     return std
 
-def clf_predict(clf: object, files: list) -> dict:
+def clf_predict(clf: object, files: list, logger) -> dict:
     """ Computes classifier metrics from a CSV file within MAWI lab dataset """
     results = dict()
     for file in files:
+        logger.debug(f"Testing file {file}")
         corrects = 0
         samples = 0
         fn = 0
@@ -61,25 +64,30 @@ def clf_predict(clf: object, files: list) -> dict:
         tp = 0
         tn = 0
         X_new, y_new = get_X_y(file)
-        pred = clf.predict(X_new)
-        for i in range(len(X_new)):
-            pred = clf.predict([X_new[i]])
-            if pred is not None:
-                if pred[0] == y_new[i]:
-                    corrects += 1
-                # False negative
-                if pred[0] == 0 and y_new[i] == 1:
-                    fn += 1
-                # False positive
-                if pred[0] == 1 and y_new[i] == 0:
-                    fp += 1
-                # True positive
-                if pred[0] == 1 and y_new[i] == 1:
-                    tp += 1
-                # False negative
-                if pred[0] == 0 and y_new[i] == 0:
-                    tn += 1
-            samples += 1
+
+        if not isinstance(clf, RandomForestClassifier):
+            for i in range(len(X_new)):
+                pred = clf.predict([X_new[i]])
+                if pred is not None:
+                    if pred[0] == y_new[i]:
+                        corrects += 1
+                    # False negative
+                    if pred[0] == 0 and y_new[i] == 1:
+                        fn += 1
+                    # False positive
+                    if pred[0] == 1 and y_new[i] == 0:
+                        fp += 1
+                    # True positive
+                    if pred[0] == 1 and y_new[i] == 1:
+                        tp += 1
+                    # False negative
+                    if pred[0] == 0 and y_new[i] == 0:
+                        tn += 1
+                samples += 1
+        else:
+            # https://stackoverflow.com/a/46230267
+            pred = clf.predict(X_new)
+            tn, fp, fn, tp = confusion_matrix(y_new, pred, labels=[0, 1]).ravel()
         
         # FNR: False Negative Rate
         # FPR: False Positive Rateshow_results
