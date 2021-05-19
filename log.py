@@ -1,18 +1,26 @@
-import logging
-import sys
+from pathlib import Path
+from logging import getLogger, FileHandler, StreamHandler, Formatter
+from logging import DEBUG, INFO, WARN, ERROR
+from sys import stdout
 
 __all__ = ['get_logger']
 
-def get_logger(name: str, level=logging.DEBUG):
+def get_logger(name: str, level=DEBUG):
+    logs = Path('logs/')
+
+    if not logs.exists():
+        print("Created 'logs' dir")
+        logs.mkdir()
+
     if '.py' in name:
         name = name[:-3]
 
-    LOGGER = logging.getLogger(name)
+    LOGGER = getLogger(name)
     LOGGER.setLevel(level)
 
-    FORMATTER = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s - %(message)s")
-    FH = logging.FileHandler(f"{name}.log")
-    SH = logging.StreamHandler(sys.stdout)
+    FORMATTER = Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    FH = FileHandler(logs.joinpath(f"{name}.log"))
+    SH = StreamHandler(stdout)
 
     FH.setLevel(level)
     SH.setLevel(level)
