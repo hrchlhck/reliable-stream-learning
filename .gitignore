@@ -134,3 +134,7 @@ outDayDataset/
 *.csv
 .vscode/
 notebooks/
+models/
+images/
+results/
+logs/
