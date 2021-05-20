@@ -2,15 +2,14 @@ from pathlib import Path
 from logging import getLogger, FileHandler, StreamHandler, Formatter
 from logging import DEBUG, INFO, WARN, ERROR
 from sys import stdout
+from constants import LOGS_PATH
 
 __all__ = ['get_logger']
 
 def get_logger(name: str, level=DEBUG):
-    logs = Path('logs/')
-
-    if not logs.exists():
+    if not LOGS_PATH.exists():
         print("Created 'logs' dir")
-        logs.mkdir()
+        LOGS_PATH.mkdir()
 
     if '.py' in name:
         name = name[:-3]
@@ -19,7 +18,7 @@ def get_logger(name: str, level=DEBUG):
     LOGGER.setLevel(level)
 
     FORMATTER = Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
-    FH = FileHandler(logs.joinpath(f"{name}.log"))
+    FH = FileHandler(LOGS_PATH.joinpath(f"{name}.log"))
     SH = StreamHandler(stdout)
 
     FH.setLevel(level)
