@@ -5,6 +5,7 @@ from functools import wraps
 from logging import Logger
 from matplotlib import pyplot as plt
 from IPython import embed
+from csv import DictWriter
 import pandas as pd
 import pickle
 import sys
@@ -294,64 +295,6 @@ def compute_pareto(csv: Path, plot=False):
         plt.xlabel('Reject rate')
         plt.savefig(f'images/pareto_{csv.name[:-4]}.png', dpi=210)
 
-def predict_rejection(classifiers: object, rejection_table: dict, files: list, logger: Logger):
-    clf_names = [get_cls_name(clf) for clf in classifiers]
-    results = dict()
-
-    for count, file in enumerate(files):
-        logger.info(f"Testing file {file.name} for {clf_names}. Tested {count} out of {len(files)} files")
-        X, y = get_X_y(file)
-        rejected = 0
-        tp = 0
-        tn = 0
-        fp = 0
-        fn = 0
-        for i in range(len(X)):
-            attack_vote = 0
-            normal_vote = 0
-            predictions = [clf.predict([X[i]]) for clf in classifiers]
-            prediction_probabilities = [clf.predict_proba([X[i]]) for clf in classifiers]
-
-            for j in range(len(predictions)):
-                pred = predictions[j]
-                pred_proba = prediction_probabilities[j]
-                
-                # If the classifier predicted an attack
-                if pred[0] == 1:
-                    if pred_proba[0][1] >= rejection_table[clf_names[j]]["attack"]:
-                    # if pred_proba[0][1] >= 0.5: 
-                        attack_vote += 1
-                else:
-                    if pred_proba[0][0] >= rejection_table[clf_names[j]]["normal"]:
-                    # if pred_proba[0][0] >= 0.99:
-                        normal_vote += 1
-            
-            if attack_vote + normal_vote != 3:
-                rejected += 1
-            else:
-                if normal_vote > attack_vote:
-                    if y[i] == 0:
-                        tn += 1
-                    else:
-                        fn += 1
-                else:
-                    if y[i] == 1:
-                        tp += 1
-                    else:
-                        fp += 1
-        results[file.name] = {
-            "fp": fp,
-            "fn": fn,
-            "tp": tp,
-            "tn": tn,
-            "fnr": fn / (fn + tp),
-            "fpr": fp / (fp + tn),
-            "rejection_vote": rejected,
-            "rejection_rate": rejected / len(X)
-        }
-        logger.info(f"Tested file {file.name} for {clf_names}. Metrics: {results[file.name]}")
-    return results
-        
 def get_operation_point(classifiers: list, key: str, perc: float):
     """ Get best operation point in non-dominated points """
     ret = dict()
@@ -374,3 +317,25 @@ def get_operation_point(classifiers: list, key: str, perc: float):
 
     return ret
 
+def save_csv(filename: Path, dictionary: dict, logger=None):
+    if not isinstance(filename, Path):
+        filename = Path(filename)
+
+    # Check if file exists and change mode
+    mode = 'w'
+    if filename.exists():
+        mode = 'a' 
+
+    # Save clf_metrics into a CSV
+    with open(filename, mode) as fd:
+        header = dictionary.keys()
+        
+        writer = DictWriter(fd, fieldnames=header)
+
+        if mode == 'w':
+            writer.writeheader()
+
+        writer.writerow(dictionary)
+        
+        if logger and isinstance(logger, Logger):
+            logger.debug(f"Saving CSV at {filename.absolute()} with metrics {dictionary}")
