@@ -1,13 +1,10 @@
-from utils import show_results
 from constants import CSV_PATH, IMAGES_PATH, MONTHS
 from log import get_logger
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import font_manager
-from matplotlib import ticker
-
-import seaborn as sns
+from matplotlib import gridspec
 
 from pathlib import Path
 
@@ -27,6 +24,13 @@ def load_custom_fonts():
     for font in fonts:
         font_manager.fontManager.addfont(font)
 
+load_custom_fonts()
+font = {
+    'family': 'Palatino',
+    'size': 22,
+}
+plt.rc('font', **font)
+
 def plot_results(filename: Path):
     filename = Path(filename)
 
@@ -40,43 +44,46 @@ def plot_results(filename: Path):
 
     months = df['month']
 
-    plt.figure(figsize=(6, 6))
-    plt.plot(months, df['fpr'] * 100, marker='^', label='FP', ms=13, linestyle='dotted', color='red')
-    plt.plot(months, df['fnr'] * 100, marker='s', label='FN', ms=13, linestyle='dotted', color='black')
+    fig = plt.figure(figsize=(6, 8), constrained_layout=True)
+
+    # fig.subplots_adjust(hspace=0.01)
+    
+    fpr_fnr = fig.add_subplot(111)
+    gs = gridspec.GridSpec(3, 1)
+    fpr_fnr.set_position(gs[0:1].get_position(fig))
+    fpr_fnr.set_subplotspec(gs[0:2])
+
+    fpr_fnr.plot(months, df['fpr'] * 100, marker='^', label='FP', ms=10, linestyle='dotted', color='red', alpha=0.8)
+    fpr_fnr.plot(months, df['fnr'] * 100, marker='s', label='FN', ms=10, linestyle='dotted', color='black', alpha=0.8)
+    fpr_fnr.set(ylim=(0, 50), yticks=[i * 10 for i in range(0, 6)], ylabel='Rate %')
+    fpr_fnr.set(xticklabels=[])
+    fpr_fnr.yaxis.set_label_coords(-0.14, 0)
+    
     if 'rejection_rate' in df.columns:
-        plt.plot(months, df['rejection_rate'] * 100, label='Rejection Rate', alpha=0.6, color='g')
-        plt.fill_between(months, (df['rejection_rate']) * 100, alpha=0.2, color='g')
-        plt.plot(months, (1 - df['rejection_rate']) * 100, label='Acceptance Rate', alpha=0.6, color='blue')
-    plt.ylim((0, 100))
-    plt.yticks([i * 10 for i in range(0, 11)])
-    plt.xticks(rotation=60)
+        reject_plot = fig.add_subplot(gs[2])
+        accept = (1 - df['rejection_rate']) * 100
+        reject = df['rejection_rate'] * 100
 
-    # Position of X and Y labels
-    ax = plt.gca()
-    ax.yaxis.set_label_coords(-0.09, 0.5)
-    ax.xaxis.set_label_coords(0.5 , -0.15)
+        # 0, reject. 1, accept
+        colors = ['#fe0014', '#55d77d']
+        
+        reject_plot.plot([], [], label='Reject', color=colors[0], linewidth=10)
+        reject_plot.plot([], [], label='Accept', color=colors[1], linewidth=10)
+        reject_plot.stackplot(months, reject, accept , colors=colors)
 
-    # Add more spacing between X ticks
-    ax.set_xticks([i - 0.5 for i in range(12)]) 
-    ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-    plt.xlabel("Month")
-    plt.ylabel("Rate %")
-    plt.legend(loc=2)
-    # plt.title(f'FN Rate vs FP Rate over {year_range[0]} for {clf_name} in view {view}')
+        reject_plot.set(ylim=(0, 5), yticks=[i * 25 for i in range(0, 5)])
+        reject_plot.tick_params(axis='x', rotation=60)
+        reject_plot.set(xlabel="Month")
 
-    # ax2.plot(df_2['month'], df_2['fpr'], marker='X', label='FPR', color='lightseagreen')
-    # ax2.plot(df_2['month'], df_2['fnr'], marker='s', label='FNR', color='coral')
-    # ax2.grid(True)
-    # ax2.legend()
-    # ax2.set_title(f'FN Rate vs FP Rate over time in {year_range[1]}')
 
-    plt.savefig(images_path.joinpath(filename.name[:-4] + ".png"), dpi=210, bbox_inches='tight')
+    fig.legend(loc=10, bbox_to_anchor=(0.5, -.11), ncol=2)
+    fig.savefig(images_path.joinpath(filename.name[:-4] + ".png"), dpi=210, bbox_inches='tight')
 
     LOGGER.info(f"Created plot {filename.name[:-4]}")
 
 def plot_pareto():
     # Color cycle
-    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=["mediumblue", "#de8f05", "#029e73"]) 
+    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=["mediumblue", "red", "black"]) 
 
     output_path = IMAGES_PATH.joinpath('pareto_computed')
 
@@ -98,18 +105,12 @@ def plot_pareto():
         plt.legend(loc=1)
     plt.yticks([i * 5 for i in range(0, 5)])
     plt.xticks([i * 5 for i in range(0, 5)])
+    plt.xlim((0, 20))
     plt.xlabel('Reject rate %')
     plt.ylabel('Error rate %')
     plt.savefig(output_path.joinpath("rejection_curve.png"), dpi=210, bbox_inches='tight')
 
-if __name__ == '__main__':
-    load_custom_fonts()
-    font = {
-        'family': 'Palatino',
-        'size': 22,
-    }
-    plt.rc('font', **font)
-    
+if __name__ == '__main__':    
     for f in CSV_PATH.joinpath('classify_by_rejection').glob("*.csv"):
         if not f.name.startswith('old'):
             plot_results(f)

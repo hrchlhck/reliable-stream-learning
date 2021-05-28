@@ -1,13 +1,14 @@
-from constants import MONTHS, CSV_PATH, VIEWS, MODELS_PATH
+from ensemble_rejection import EnsembleRejection
+from x import plot_pareto, plot_results
+from constants import MONTHS, CSV_PATH, MODELS_PATH
 
 from utils import (
-    compute_pareto, get_files, get_X_y, 
-    clf_predict, get_operation_point, get_rejection_metrics, predict_rejection, 
-    print_progress, save_model, 
+    compute_pareto, ensemble_predict, get_files, get_X_y, 
+    clf_predict, get_operation_point, 
+    print_progress, save_csv, save_model, 
     show_results, timer, 
     load_model, ensemble,
     get_metrics, get_cls_name,
-    mean
 )
 
 from log import get_logger
@@ -23,9 +24,6 @@ from csv import DictWriter
 from random import Random
 from datetime import datetime
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-
 DATE = datetime.now().strftime('%d_%m_%Y-%H-%M')
 LOGGER = get_logger(f'train_moore_2014_{DATE}')
 
@@ -52,21 +50,7 @@ def _test_ensemble(classifiers: list, _from: int, _to: int, view: str, filename:
             clf_metrics['month'] = mn
             clf_metrics['test_year'] = test_year
 
-            mode = 'w'
-            if filename.exists():
-                mode = 'a' 
-
-            # Save clf_metrics into a CSV
-            with open(filename, mode) as fd:
-                header = clf_metrics.keys()
-                
-                writer = DictWriter(fd, fieldnames=header)
-
-                if mode == 'w':
-                    writer.writeheader()
-
-                writer.writerow(clf_metrics)
-                LOGGER.debug(f"Ensemble done with metrics {clf_metrics} for {mn}/{test_year} at {view}")
+            save_csv(filename, clf_metrics, logger=LOGGER)
 
 @timer(logger=LOGGER)
 def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path, files: list):
@@ -95,22 +79,7 @@ def _test_model(clf: object, _from: int, _to: int, base: str, filename: Path, fi
             clf_metrics['month'] = mn
             clf_metrics['test_year'] = test_year
 
-            # Check if file exists and change mode
-            mode = 'w'
-            if filename.exists():
-                mode = 'a' 
-
-            # Save clf_metrics into a CSV
-            with open(filename, mode) as fd:
-                header = clf_metrics.keys()
-                
-                writer = DictWriter(fd, fieldnames=header)
-
-                if mode == 'w':
-                    writer.writeheader()
-
-                writer.writerow(clf_metrics)
-                LOGGER.debug(f"{clf_name} done with metrics {clf_metrics} for {mn}/{test_year} at {base}")
+            save_csv(filename, clf_metrics, logger=LOGGER)
 
 @timer(logger=LOGGER)
 def test(_from: int, _to: int, base: str, classifier: object, files: list):
@@ -240,36 +209,29 @@ def main_rejection(clf):
             df.to_csv(OUTPUT, index=False)
 
 def _test_rejection(classifiers: object, rejection_table: dict, files: list, _from: int, _to: int, output_path: Path, logger):
-    clf_name = "EnsembleRejection_26_05__01"
+    clf_name = "EnsembleRejection2_28_05__01"
     filename = output_path.joinpath(f"{clf_name}_{_from}_{_to}.csv")
     
+    last_month = '01'
+    actual_month = '01'
+    er = EnsembleRejection(classifiers, rejection_table, [0, 1], logger=logger)
     for test_year in range(_from, _to):
         for m, mn in MONTHS:
-
-            results = predict_rejection(classifiers, rejection_table, files[m], logger)
+            results = dict()
+            actual_month = m
+            for fi in range(len(files[m])):
+                file = files[m][fi]
+                logger.info(f"Testing file {file.name} for ensemble of {', '.join(er.names)}. Tested {fi} out of {len(files[m])} files")
+                X, y = get_X_y(file)
+                results[file.name] = er.predict(X, y, last_month=last_month, actual_month=actual_month, file_num=fi)
 
             # Parsing results
-            clf_metrics = show_results(results)
-            clf_metrics['month'] = mn
-            clf_metrics['test_year'] = test_year
+            ensemble_metrics = show_results(results)
+            ensemble_metrics['month'] = mn
+            ensemble_metrics['test_year'] = test_year
 
-            # Check if file exists and change mode
-            mode = 'w'
-            if filename.exists():
-                mode = 'a' 
-
-            # Save clf_metrics into a CSV
-            with open(filename, mode) as fd:
-                header = clf_metrics.keys()
-                
-                writer = DictWriter(fd, fieldnames=header)
-
-                if mode == 'w':
-                    writer.writeheader()
-
-                writer.writerow(clf_metrics)
-                LOGGER.debug(f"{clf_name} done with metrics {clf_metrics} for {mn}/{test_year}")
-
+            save_csv(filename, ensemble_metrics, logger=LOGGER)
+            last_month = actual_month
 
 @timer(logger=LOGGER)
 def main_classify_rejection():
@@ -278,7 +240,8 @@ def main_classify_rejection():
     TO = 2015
     CLASSIFIERS = [load_model(clf.name) for clf in MODELS_PATH.glob('*.model')]
     OUTPUT = CSV_PATH.joinpath('classify_by_rejection')
-    REJECTION_TABLE = get_operation_point(list(CSV_PATH.joinpath("pareto_computed").glob("*.csv")), 'error_rate', 0.1)
+    CLASSIFIER_THRESHOLDS_FILES = list(CSV_PATH.joinpath("pareto_computed").glob("*.csv"))
+    CLASSIFIER_THRESHOLDS = get_operation_point(CLASSIFIER_THRESHOLDS_FILES, 'error_rate', 0.05)
     N_DAYS = 7
 
     if not OUTPUT.exists():
@@ -286,7 +249,7 @@ def main_classify_rejection():
 
     files = {month: [r.choice(get_files(FROM, VIEWS[0], month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS}
 
-    _test_rejection(CLASSIFIERS, REJECTION_TABLE, files, FROM, TO, OUTPUT, LOGGER)
+    _test_rejection(CLASSIFIERS, CLASSIFIER_THRESHOLDS, files, FROM, TO, OUTPUT, LOGGER)
 
 if __name__ == '__main__':
     # main_classifiers()
@@ -302,3 +265,5 @@ if __name__ == '__main__':
     # for file in CSV_PATH.joinpath('rejection_metrics').glob('*.csv'):
     #     if 'Classifier' in file.name:
     #         compute_pareto(file)
+
+    # plot_results()
