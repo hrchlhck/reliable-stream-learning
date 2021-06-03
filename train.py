@@ -209,9 +209,14 @@ def main_rejection(clf):
             df.to_csv(OUTPUT, index=False)
 
 def _test_rejection(classifiers: object, rejection_table: dict, files: list, _from: int, _to: int, output_path: Path, logger):
-    clf_name = "EnsembleRejection2_28_05__01"
+    clf_name = "EnsembleRejection2_31_05__1_single_update"
     filename = output_path.joinpath(f"{clf_name}_{_from}_{_to}.csv")
-    
+    output_day = output_path.joinpath(f'per_day_{clf_name}')
+    from copy import deepcopy
+
+    if not output_day.exists():
+        output_day.mkdir()
+
     last_month = '01'
     actual_month = '01'
     er = EnsembleRejection(classifiers, rejection_table, [0, 1], logger=logger)
@@ -224,6 +229,11 @@ def _test_rejection(classifiers: object, rejection_table: dict, files: list, _fr
                 logger.info(f"Testing file {file.name} for ensemble of {', '.join(er.names)}. Tested {fi} out of {len(files[m])} files")
                 X, y = get_X_y(file)
                 results[file.name] = er.predict(X, y, last_month=last_month, actual_month=actual_month, file_num=fi)
+                results_temp = deepcopy(results[file.name])
+                results_temp['month'] = mn
+                results_temp['year'] = test_year
+                results_temp['day'] = fi
+                save_csv(output_day.joinpath(f'{mn}.csv'), results_temp, logger=logger)
 
             # Parsing results
             ensemble_metrics = show_results(results)
