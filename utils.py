@@ -15,8 +15,6 @@ __all__ = ['get_files', 'get_X_y', 'mean_accuracy', 'std_accuracy', 'clf_predict
 get_cls_name = lambda obj: obj.__class__.__name__
 
 def get_metrics(classifier, file):
-    results = dict()
-
     corrects = 0
     samples = 0
     fn = 0
@@ -47,7 +45,7 @@ def get_metrics(classifier, file):
     
     # FNR: False Negative Rate
     # FPR: False Positive Rate
-    results[file.name] = {
+    results = {
         'corrects': corrects, 
         'samples': samples, 
         'fp': fp,
