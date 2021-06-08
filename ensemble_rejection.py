@@ -1,7 +1,9 @@
+from constants import CSV_PATH
 from logging import Logger
+from pathlib import Path
 
 from IPython.terminal.embed import embed
-from utils import get_cls_name, timer
+from utils import get_cls_name, save_csv, timer
 import numpy as np
 
 __all__ = ['EnsembleRejection']
@@ -64,13 +66,13 @@ class EnsembleRejection(object):
             last_month = kwargs.get('last_month')
             file_num = kwargs.get('file_num')
 
-        # Training with last month
-        if actual_month != last_month:
-            print(kwargs)
-            instances = self.rejections.pop(f'{last_month}-{file_num}')
-            X_rej = [x[0] for x in instances]
-            y_rej = [y[1] for y in instances]
-            self.partial_fit(X_rej, y_rej)
+            # Training with last month
+            if actual_month != last_month:
+                print(kwargs)
+                instances = self.rejections.pop(f'{last_month}-{file_num}')
+                X_rej = [x[0] for x in instances]
+                y_rej = [y[1] for y in instances]
+                self.partial_fit(X_rej, y_rej)
     
         if self.__logger and isinstance(self.__logger, Logger):
             self.__logger.debug("Started evaluation")
@@ -96,8 +98,17 @@ class EnsembleRejection(object):
                         normal_vote += 1
             
             # Rejection
-            if attack_vote + normal_vote != 3:
-                # Increasing rejected instances count and adding into a list of rejections
+            # # Aceitar apenas se todos aceitarem
+            # if attack_vote + normal_vote != 3:
+            #     # Increasing rejected instances count and adding into a list of rejections
+            #     rejection_count += 1
+            #     rejected_instances.append((X[i], y_true[i]))
+            # Aceita se a maioria aceitar
+            # if attack_vote + normal_vote < 2:
+            #     rejection_count += 1
+            #     rejected_instances.append((X[i], y_true[i]))
+            # Aceita se pelo menos um aceitar 
+            if attack_vote + normal_vote == 0:
                 rejection_count += 1
                 rejected_instances.append((X[i], y_true[i]))
             else:
