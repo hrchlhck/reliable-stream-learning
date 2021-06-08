@@ -17,13 +17,24 @@ from skmultiflow.meta import LeveragingBaggingClassifier
 from skmultiflow.meta import OzaBaggingClassifier
 from skmultiflow.trees import HoeffdingTreeClassifier
 from skmultiflow.data import DataStream
-from sklearn.ensemble import RandomForestClassifier
-from threading import Thread
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    GradientBoostingClassifier,
+    AdaBoostClassifier,
+    VotingClassifier
+)
+from threading import Thread, Lock
 from pathlib import Path
-from csv import DictWriter
 from random import Random
 from datetime import datetime
+from time import perf_counter
 import pandas as pd
+from functools import reduce
+from operator import add
+from copy import deepcopy
+
+
+
 DATE = datetime.now().strftime('%d_%m_%Y-%H-%M')
 LOGGER = get_logger(f'train_moore_2014_{DATE}')
 
@@ -212,7 +223,6 @@ def _test_rejection(classifiers: object, rejection_table: dict, files: list, _fr
     clf_name = "EnsembleRejection2_31_05__1_single_update"
     filename = output_path.joinpath(f"{clf_name}_{_from}_{_to}.csv")
     output_day = output_path.joinpath(f'per_day_{clf_name}')
-    from copy import deepcopy
 
     if not output_day.exists():
         output_day.mkdir()
@@ -261,12 +271,115 @@ def main_classify_rejection():
 
     _test_rejection(CLASSIFIERS, CLASSIFIER_THRESHOLDS, files, FROM, TO, OUTPUT, LOGGER)
 
+def _test_batch(classifier, files, output: Path, month, _from, _to):
+    results = dict()
+    clf_name = get_cls_name(classifier)
+    csv_name = f'{clf_name}_{_from}_{_to}.csv'
+    output_day = output.joinpath(f'per_day_{clf_name}')
+
+    if not output_day.exists():
+        output_day.mkdir()
+
+    for day, file in enumerate(files):
+        results[file.name] = get_metrics(classifier, file)
+        results_temp = deepcopy(results[file.name])
+        results_temp['month'] = month
+        results_temp['year'] = _from
+        results_temp['day'] = day
+        save_csv(output_day.joinpath(f"{month}.csv"), results_temp, logger=LOGGER)
+
+    metrics = show_results(results)
+    metrics['month'] = month
+    metrics['year'] = _from
+    save_csv(output.joinpath(csv_name), metrics, logger=LOGGER)
+
+
+def main_classify_batch():
+    VIEW = 'MOORE'
+    FROM = 2014
+    TO = 2015
+    OUTPUT = CSV_PATH.joinpath('batch_classifiers')
+    CLASSIFIERS = [RandomForestClassifier(), GradientBoostingClassifier(), AdaBoostClassifier()]
+    N_DAYS = 7
+
+    if not OUTPUT.exists():
+        OUTPUT.mkdir()
+
+    files = {month: [r.choice(get_files(FROM, VIEW, month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS}
+
+    # Preparing dataset
+    X = list()
+    y = list()
+    for file in files['01']:
+        _X, _y = get_X_y(file)
+        X.append(_X.tolist())
+        y.append(_y.tolist())
+
+    # Removing nested lists
+    y = reduce(add, y)
+    X = reduce(add, X)
+
+    # Training classifiers
+    LOGGER.info(f"Started training classifiers {list(map(get_cls_name, CLASSIFIERS))}")
+    for i in range(len(CLASSIFIERS)):
+        name = MODELS_PATH / f'{get_cls_name(CLASSIFIERS[i])}.model'
+
+        if not name.exists():
+            start = perf_counter()
+            LOGGER.info(f"Training classifier {get_cls_name(CLASSIFIERS[i])}")
+            CLASSIFIERS[i] = (get_cls_name(CLASSIFIERS[i]), CLASSIFIERS[i].fit(X, y))
+            end = perf_counter() - start
+            times = {'clf': CLASSIFIERS[i][0], 'time_elapsed': end, 'type': 'train', 'month': '01'}
+            save_csv(OUTPUT.joinpath("time_elapsed.csv"), times, logger=LOGGER)
+
+            save_model(CLASSIFIERS[i][1], get_cls_name(CLASSIFIERS[i][1]))
+            LOGGER.info(f"Saved model {CLASSIFIERS[i][0]}")
+        else:
+            LOGGER.info(f"Loading classifier {name.name}")
+            CLASSIFIERS[i] = (get_cls_name(CLASSIFIERS[i]), load_model(name.name))
+
+    # Training ensemble
+    if not (MODELS_PATH / 'Ensemble.model').exists():
+        start = perf_counter()
+        LOGGER.info(f"Started training ensemble")
+        ens = VotingClassifier(CLASSIFIERS, voting='hard')
+        ens = ens.fit(X, y)
+        end = perf_counter() - start
+        times = {'clf': 'Ensemble', 'time_elapsed': end, 'type': 'train', 'month': '01'}
+        save_csv(OUTPUT.joinpath("time_elapsed.csv"), times, logger=LOGGER)
+
+        LOGGER.info("Saving ensemble")
+        save_model(ens, 'Ensemble')
+    else:
+        LOGGER.info("Loading ensemble at CLASSIFIERS variable")
+        CLASSIFIERS.append(("Ensemble", load_model("Ensemble.model")))
+
+    # Function to be used as a thread
+    def test_classifiers(classifier: object, files: dict, mutex: Lock):
+        # Testing classifiers
+        for month in files:
+            _files = files[month]
+    
+            LOGGER.info(f"Started testing {classifier[0]} at month {month}")
+            start = perf_counter()
+            _test_batch(classifier[1], _files, OUTPUT, month, FROM, TO)
+            end = perf_counter() - start
+            times = {'clf': classifier[0], 'time_elapsed': end, 'type': 'test', 'month': month}
+            mutex.acquire()
+            save_csv(OUTPUT.joinpath("time_elapsed.csv"), times, logger=LOGGER)
+            mutex.release()
+        LOGGER.info(f"Finished {classifier[0]}")
+
+    mutex = Lock()
+    for clf in CLASSIFIERS:
+        Thread(target=test_classifiers, args=(clf, files, mutex)).start()
+
 if __name__ == '__main__':
     # main_classifiers()
     # main_ensemble()
     # for clf in MODELS_PATH.glob('*.model'):
     #     main_rejection(clf.name)
-    main_classify_rejection()
+    # main_classify_rejection()
 
     # for file in CSV_PATH.joinpath('pareto').glob('*.csv'):
     #     if 'Classifier' in file.name:
@@ -277,3 +390,5 @@ if __name__ == '__main__':
     #         compute_pareto(file)
 
     # plot_results()
+
+    main_classify_batch()
