@@ -1,12 +1,11 @@
-from constants import CSV_PATH
 from logging import Logger
-from pathlib import Path
 
-from IPython.terminal.embed import embed
-from utils import get_cls_name, save_csv, timer
+from typing import Any, List, Tuple
+
+from utils import get_cls_name
 import numpy as np
 
-__all__ = ['EnsembleRejection']
+__all__ = ['EnsembleRejection', 'StreamVotingClassifier']
 
 class EnsembleRejection(object):
     def __init__(self, classifiers: list, thresholds: dict, classes: list, logger=None):
@@ -50,7 +49,7 @@ class EnsembleRejection(object):
         if self.__logger and isinstance(self.__logger, Logger):
             self.__logger.debug(f"Finished partial fitting for ensemble with {', '.join(self.names)} models")
 
-    def predict(self, X, y_true, **kwargs):
+    def predict(self, X, y_true, update=False, **kwargs):
         fp = 0
         fn = 0
         tp = 0
@@ -61,14 +60,18 @@ class EnsembleRejection(object):
         last_month = None
         file_num = None
 
-        if 'actual_month' in kwargs and 'last_month' in kwargs and 'file_num' in kwargs:
+        if update == True:
+            if not 'actual_month' in kwargs or not 'last_month' in kwargs or not 'file_num' in kwargs:
+                raise ValueError('May be missing \'actual_month\', \'last_month\' or \'file_num\' keyword arguments.')
+
             actual_month = kwargs.get('actual_month')
             last_month = kwargs.get('last_month')
             file_num = kwargs.get('file_num')
 
             # Training with last month
             if actual_month != last_month:
-                print(kwargs)
+                if self.__logger and isinstance(self.__logger, Logger):
+                    self.__logger.debug('Started updating model')
                 instances = self.rejections.pop(f'{last_month}-{file_num}')
                 X_rej = [x[0] for x in instances]
                 y_rej = [y[1] for y in instances]
@@ -139,3 +142,65 @@ class EnsembleRejection(object):
         }
 
         return metrics
+
+class StreamVotingClassifier:
+    def __init__(self, *estimators: list, logger=None):
+        self.__estimators = list(estimators)
+        self.__logger = logger
+    
+    @property
+    def estimators(self):
+        return self.__estimators
+
+    @property
+    def _logger(self):
+        return self.__logger
+
+    @property
+    def names(self):
+        return [get_cls_name(obj[1]) for obj in self.estimators]
+    
+    def partial_fit(self, X, y, classes):
+        if not isinstance(y, np.ndarray):
+            y = np.array(y)
+            X = np.array(X)
+
+        for i in range(len(self.estimators)):
+            for ix in range(len(X)):
+                self.__estimators[i][1] = self.__estimators[i][1].partial_fit([X[ix]], [y[ix]], classes=classes)
+
+        return self
+
+    def predict(self, X, y_true):
+        fp = 0
+        fn = 0
+        tp = 0
+        tn = 0
+
+        for i in range(len(X)):
+            predictions = [e[1].predict([X[i]]) for e in self.estimators]
+            votes_by_class = votes_by_class = ((predictions[i], predictions.count(obj)) for i, obj in enumerate(predictions))
+            votes_by_class = sorted(votes_by_class, key=lambda x: x[1])
+            final_prediction = {'class': votes_by_class[-1][0], 'votes': votes_by_class[-1][1]}
+
+            if final_prediction['class'] == 1 and y_true[i] == 1:
+                tp += 1
+            if final_prediction['class'] == 0 and y_true[i] == 0:
+                tn += 1
+            if final_prediction['class'] == 1 and y_true[i] == 0:
+                fp += 1
+            if final_prediction['class'] == 0 and y_true[i] == 1:
+                fn += 1
+        
+        results = {
+            'fp': fp,
+            'fn': fn,
+            'tp': tp,
+            'tn': tn,
+            'fpr': fn / (fn + tp),
+            'fnr': fp / (fp + tn),
+            'recall': tp / (tp + fn),
+            'precision': tp / (tp + fp),
+            'accuracy': round((tp + tn) / len(X), 4)
+        }
+        return results
