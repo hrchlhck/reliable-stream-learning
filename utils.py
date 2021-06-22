@@ -41,7 +41,6 @@ def get_metrics(classifier, file):
             if pred[0] == 0 and y_new[i] == 0:
                 tn += 1
         samples += 1
-        print_progress(samples, len(X_new), label=file.name)
     
     # FNR: False Negative Rate
     # FPR: False Positive Rate
@@ -200,7 +199,6 @@ def ensemble(classifiers: list, files: list, logger: Logger):
                 if pred['class'] == 0 and y_new[i] == 0:
                     tn += 1
             samples += 1
-            print_progress(samples, len(X_new), label=file.name)
         
         # FNR: False Negative Rate
         # FPR: False Positive Rateshow_results
