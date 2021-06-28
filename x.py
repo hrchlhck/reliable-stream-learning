@@ -1,6 +1,8 @@
 from constants import CSV_PATH, IMAGES_PATH, MONTHS
 from log import get_logger
 
+from IPython import embed
+
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import font_manager
@@ -9,6 +11,7 @@ from matplotlib import gridspec
 from pathlib import Path
 
 import pandas as pd
+import numpy as np
 import re
 
 __all__ = ['plot_results']
@@ -34,7 +37,7 @@ plt.rc('font', **font)
 def plot_results(filename: Path):
     filename = Path(filename)
 
-    images_path = IMAGES_PATH.joinpath('final')
+    images_path = IMAGES_PATH.joinpath(filename.parent.name)
 
     # Setting up output directory
     if not images_path.exists():
@@ -42,22 +45,24 @@ def plot_results(filename: Path):
 
     df = pd.read_csv(filename)
 
-    months = df['month']
+    months = [mn for m, mn in MONTHS]
 
-    fig = plt.figure(figsize=(6, 8), constrained_layout=True)
+    fig = plt.figure(figsize=(5, 5), constrained_layout=True)
 
     # fig.subplots_adjust(hspace=0.01)
     
     fpr_fnr = fig.add_subplot(111)
     gs = gridspec.GridSpec(3, 1)
-    fpr_fnr.set_position(gs[0:1].get_position(fig))
-    fpr_fnr.set_subplotspec(gs[0:2])
+    fpr_fnr.set_position(gs[0:4].get_position(fig))
+    fpr_fnr.set_subplotspec(gs[0:4])
 
     fpr_fnr.plot(months, df['fpr'] * 100, marker='^', label='FP', ms=10, linestyle='dotted', color='red', alpha=0.8)
     fpr_fnr.plot(months, df['fnr'] * 100, marker='s', label='FN', ms=10, linestyle='dotted', color='black', alpha=0.8)
-    fpr_fnr.set(ylim=(0, 50), yticks=[i * 10 for i in range(0, 6)], ylabel='Rate %')
-    fpr_fnr.set(xticklabels=[])
-    fpr_fnr.yaxis.set_label_coords(-0.14, 0)
+    fpr_fnr.set(ylim=(0, 80), yticks=[i * 10 for i in range(0, 9)], ylabel='Rate')
+    fpr_fnr.set(xticks=months)
+    fpr_fnr.tick_params(axis='x', rotation=60)
+    fpr_fnr.set(xlabel="Month")
+    # fpr_fnr.yaxis.set_label_coords(-0.14, 0)
     
     if 'rejection_rate' in df.columns:
         reject_plot = fig.add_subplot(gs[2])
@@ -76,8 +81,8 @@ def plot_results(filename: Path):
         reject_plot.set(xlabel="Month")
 
 
-    fig.legend(loc=10, bbox_to_anchor=(0.5, -.11), ncol=2)
-    fig.savefig(images_path.joinpath(filename.name[:-4] + ".png"), dpi=210, bbox_inches='tight')
+    fig.legend(loc=2, prop={'size': 16}, bbox_to_anchor=(0.14, .86))
+    fig.savefig(images_path.joinpath(filename.name[:-4] + ".svg"), dpi=290, bbox_inches='tight', format='svg')
 
     LOGGER.info(f"Created plot {filename.name[:-4]}")
 
@@ -102,6 +107,7 @@ def plot_pareto():
         y = file[1]['error_rate'] * 100
 
         plt.plot(x, y, label=' '.join(file[0][:-1]), linewidth=4, alpha=0.8)
+        # plt.plot(x, yy, alpha=0.8, marker='x')
         plt.legend(loc=1)
     plt.yticks([i * 5 for i in range(0, 5)])
     plt.xticks([i * 5 for i in range(0, 5)])
@@ -110,7 +116,69 @@ def plot_pareto():
     plt.ylabel('Error rate %')
     plt.savefig(output_path.joinpath("rejection_curve.png"), dpi=210, bbox_inches='tight')
 
+def plot_time(filename: Path):
+    if isinstance(filename, str):
+        filename = Path(filename)
+
+    output_dir = IMAGES_PATH.joinpath(filename.parent.name)
+
+    if not output_dir.exists():
+        output_dir.mkdir()
+
+    df = pd.read_csv(filename)
+
+    # Getting month names
+    months = [mn for _, mn in MONTHS]
+
+    # Selecting train time elapsed per classifier
+    train = df[df['type'] == 'train']
+
+    # Selecting test type elapsed per classifier
+    test = df[df['type'] == 'test'].copy()
+
+    # Converting seconds to minutes at 'test'
+    test['time_elapsed'] = test['time_elapsed'].map(lambda x: x / 60)
+
+    rf = test[(test['clf'] == 'HoeffdingTreeClassifier')]
+    gbt = test[(test['clf'] == 'LeveragingBaggingClassifier')]
+    ada = test[(test['clf'] == 'OzaBaggingClassifier')]
+    ens = test[(test['clf'] == 'StreamVotingClassifier')]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
+
+    # Plotting test time per month, per classifier
+    conf = {'linewidth': 2, 'alpha': 0.8, 'marker': 'o', 'ms': 6}
+    ax1.plot(months, rf['time_elapsed'], label='Random Forest', **conf)
+    ax1.plot(months, gbt['time_elapsed'], label='Gradient Boosting', **conf)
+    ax1.plot(months, ada['time_elapsed'], label='Ada Boost', **conf)
+
+    # Plotting Ensmble with partial results
+    if len(ens['time_elapsed'] < 12):
+        y = ens['time_elapsed'].tolist()
+        y += [10 for _ in range(12 - len(ens))]
+        ax1.plot(months, y, label='Ensemble', **conf)
+    else:
+        ax1.plot(months, ens['time_elapsed'], label='Ensemble', **conf)
+
+    ax1.set(xlim=(1, 11), xticks=months)
+    ax1.set(ylim=(0, 240), yticks=[i * 30 for i in range(0, 9)])
+    ax1.tick_params(axis='x', rotation=45)
+    ax1.set(xlabel='Months', ylabel='Minutes')
+    ax1.legend(loc=2, prop={'size': 14})
+
+    # Plotting train time per classifier
+    ax2.bar(['RF', 'GBT', 'ADA', 'Ens'], train['time_elapsed'], label='Time elapsed')
+    ax2.set(ylim=(0, 80), yticks=[i * 15 for i in range(0, 7)])
+    ax2.tick_params(axis='x', rotation=45)
+    ax2.set(xlabel='Classifier', ylabel='Seconds')
+    ax2.legend(loc=2, prop={'size': 14})
+
+    plt.subplots_adjust(hspace=0.6)
+
+    fig.savefig(output_dir.joinpath(filename.name[:-4] + ".png"), dpi=290, bbox_inches='tight')
+
 if __name__ == '__main__':    
-    for f in CSV_PATH.joinpath('classify_by_rejection').glob("*.csv"):
-        if not f.name.startswith('old'):
+    for f in CSV_PATH.joinpath('stream_classifiers').glob("*.csv"):
+        if not f.name.startswith('time'):
             plot_results(f)
+    # plot_time('results/stream_classifiers/time_elapsed.csv')
