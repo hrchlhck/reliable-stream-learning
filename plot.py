@@ -177,8 +177,50 @@ def plot_time(filename: Path):
 
     fig.savefig(output_dir.joinpath(filename.name[:-4] + ".png"), dpi=290, bbox_inches='tight')
 
+def plot_density(view: str, year: int):
+    """ Plot density of instances per month on MAWILab dataset """
+
+    path = Path(f'outDayDataset/{year}/{view}')
+
+    if Path('asd.csv') in list(Path('.').glob('*')):
+        df = pd.read_csv('asd.csv')
+    else:
+        df = pd.DataFrame(columns=['month', 'normal_instances', 'attack_instances'])
+
+        for month in path.glob('*'):
+            attack_instances = 0
+            normal_instances = 0
+            for file in month.glob('*'):
+                df_tmp = pd.read_csv(file)
+                normal_instances += len(df_tmp[df_tmp['class'] == 0])
+                attack_instances += len(df_tmp[df_tmp['class'] == 1])
+            data = {'month': month.name, 'normal_instances': normal_instances, 'attack_instances': attack_instances}
+            df = df.append(data, ignore_index=True)
+        
+        df = df.sort_values(by='month')
+        df.to_csv('asd.csv', index=False)
+
+    plt.figure(figsize=(5, 5))
+
+    months = [m[1] for m in MONTHS]
+
+    plt.fill_between(months, df['normal_instances'], label='Normal')
+    plt.fill_between(months, df['attack_instances'], label='Attack')
+
+    plt.xticks(months, rotation=45)
+    plt.xlabel('Month')
+
+    plt.yticks([i * 250000 for i in range(5)])
+    plt.ticklabel_format(style='plain', axis='y')
+    plt.ylabel('Number of Instances')
+
+    plt.legend( prop={'size': 16})
+    plt.savefig('result.png', dpi=290, bbox_inches='tight')
+    
+
 if __name__ == '__main__':    
-    for f in CSV_PATH.joinpath('stream_classifiers').glob("*.csv"):
-        if not f.name.startswith('time'):
-            plot_results(f)
+    # for f in CSV_PATH.joinpath('stream_classifiers').glob("*.csv"):
+    #     if not f.name.startswith('time'):
+    #         plot_results(f)
     # plot_time('results/stream_classifiers/time_elapsed.csv')
+    plot_density('MOORE', 2014)
