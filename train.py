@@ -1,5 +1,4 @@
 from ensemble_rejection import EnsembleRejection, StreamVotingClassifier
-from x import plot_pareto, plot_results
 from constants import MONTHS, CSV_PATH, MODELS_PATH
 
 from utils import (
