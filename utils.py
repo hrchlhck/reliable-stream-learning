@@ -4,15 +4,18 @@ from time import perf_counter
 from functools import wraps
 from logging import Logger
 from matplotlib import pyplot as plt
-from IPython import embed
 from csv import DictWriter
 import pandas as pd
 import pickle
 import sys
 
-__all__ = ['get_files', 'get_X_y', 'mean_accuracy', 'std_accuracy', 'clf_predict', 'show_results', 'mean', 'timer', 'get_cls_name']
+__all__ = ['get_files', 'get_X_y', 'mean_accuracy', 'std_accuracy', 'clf_predict', 'show_results', 'mean', 'timer', 'get_cls_name', 'format_day']
 
+# Get class name
 get_cls_name = lambda obj: obj.__class__.__name__
+
+# Just adds a 0 in front of the month if it is bellow 10
+format_day = lambda day: f'0{day}' if day < 10 and day > 0 else str(day)
 
 def get_metrics(classifier, file):
     corrects = 0
@@ -335,3 +338,45 @@ def save_csv(filename: Path, dictionary: dict, logger=None):
         
         if logger and isinstance(logger, Logger):
             logger.debug(f"Saving CSV at {filename.absolute()} with metrics {dictionary}")
+        
+def toCsv(text):
+    """ ARFF to CSV function. Source: https://github.com/haloboy777/arfftocsv """
+    data = False
+    header = ""
+    new_content = []
+    for line in text:
+        if not data:
+            if "@ATTRIBUTE" in line or "@attribute" in line:
+                attributes = line.split()
+                if("@attribute" in line):
+                    attri_case = "@attribute"
+                else:
+                    attri_case = "@ATTRIBUTE"
+                column_name = attributes[attributes.index(attri_case) + 1]
+                header = header + column_name + ","
+            elif "@DATA" in line or "@data" in line:
+                data = True
+                header = header[:-1]
+                header += '\n'
+                new_content.append(header)
+        else:
+            new_content.append(line)
+    return new_content
+
+def get_view_density(view: str, year: int):
+    path = Path(f'outDayDataset/unbalanced/{year}/{view}')
+    df = pd.DataFrame(columns=['month', 'attack', 'normal'])
+
+    for month in path.glob('*'):
+        attack = 0            
+        normal = 0
+        for file in month.glob('*.csv'):
+            df_tmp = pd.read_csv(file)
+            normal += len(df_tmp[df_tmp['class'] == 'normal'])
+            attack += len(df_tmp[df_tmp['class'] == 'attack'])
+        data = {'month': month.name, 'attack': attack, 'normal': normal}
+        print(data)
+        df = df.append(data, ignore_index=True)
+    
+    df = df.sort_values(by='month')
+    df.to_csv(CSV_PATH.joinpath(f'{view}_{year}_density.csv'), index=False)
