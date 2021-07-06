@@ -1,8 +1,10 @@
+from constants import MONTHS
 from logging import Logger
+from time import perf_counter
+from typing import List
 
-from typing import Any, List, Tuple
-
-from utils import get_cls_name
+from utils import get_cls_name, save_csv
+from datetime import datetime
 import numpy as np
 
 __all__ = ['EnsembleRejection', 'StreamVotingClassifier']
@@ -49,16 +51,16 @@ class EnsembleRejection(object):
         if self.__logger and isinstance(self.__logger, Logger):
             self.__logger.debug(f"Finished partial fitting for ensemble with {', '.join(self.names)} models")
 
-    def predict(self, X, y_true, update=False, **kwargs):
-        fp = 0
-        fn = 0
-        tp = 0
-        tn = 0
-        rejection_count = 0
-        rejected_instances = list()
-        actual_month = None
-        last_month = None
-        file_num = None
+    def predict(self, X, y_true, update=False, update_delay=1, **kwargs):
+        fp: int = 0
+        fn: int = 0
+        tp: int = 0
+        tn: int = 0
+        rejection_count: int = 0
+        rejected_instances: List[int] = list()
+        actual_month: str = None
+        last_month: str = None
+        file_num: int = None
 
         if update == True:
             if not 'actual_month' in kwargs or not 'last_month' in kwargs or not 'file_num' in kwargs:
@@ -69,13 +71,30 @@ class EnsembleRejection(object):
             file_num = kwargs.get('file_num')
 
             # Training with last month
-            if actual_month != last_month:
+            if actual_month != last_month and int(last_month) > 0:
                 if self.__logger and isinstance(self.__logger, Logger):
-                    self.__logger.debug('Started updating model')
+                    self.__logger.debug(f'Started updating model with last_month: {MONTHS[last_month]}')
                 instances = self.rejections.pop(f'{last_month}-{file_num}')
                 X_rej = [x[0] for x in instances]
                 y_rej = [y[1] for y in instances]
+
+                start: float = perf_counter()
                 self.partial_fit(X_rej, y_rej)
+                end: float = perf_counter() - start
+
+                time = {
+                    'timestamp': str(datetime.now()), 
+                    'clf': get_cls_name(self), 
+                    'time_elapsed': end, 
+                    'type': 'train', 
+                    'month': actual_month, 
+                    'last_month': last_month
+                }
+                
+                mutex = kwargs.get('mutex')
+                mutex.acquire()
+                save_csv(kwargs.get('output'), time, logger=self.__logger)
+                mutex.release()
     
         if self.__logger and isinstance(self.__logger, Logger):
             self.__logger.debug("Started evaluation")
