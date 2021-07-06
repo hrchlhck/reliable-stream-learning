@@ -2,7 +2,7 @@ from ensemble_rejection import EnsembleRejection, StreamVotingClassifier
 from constants import MONTHS, CSV_PATH, MODELS_PATH
 
 from utils import (
-    compute_pareto, ensemble_predict, get_files, get_X_y, 
+    compute_pareto, ensemble_predict, format_day, get_files, get_X_y, 
     clf_predict, get_operation_point, 
     print_progress, save_csv, save_model, 
     show_results, timer, 
@@ -270,7 +270,7 @@ def main_rejection(clf):
             df.to_csv(OUTPUT, index=False)
 
 def _test_rejection(classifiers: object, rejection_table: dict, files: list, _from: int, _to: int, output_path: Path, logger, update: bool, mutex: Lock):
-    clf_name = "EnsembleRejection2_31_05__1_single_update"
+    clf_name = "EnsembleRejection_no_update_delay_1months"
     filename = output_path.joinpath(f"{clf_name}_{_from}_{_to}.csv")
     output_day = output_path.joinpath(f'per_day_{clf_name}')
 
@@ -279,19 +279,23 @@ def _test_rejection(classifiers: object, rejection_table: dict, files: list, _fr
 
     last_month = '01'
     actual_month = '01'
+
+    # Month delay
+    delay = 1
     er = EnsembleRejection(classifiers, rejection_table, [0, 1], logger=logger)
     for test_year in range(_from, _to):
-        for m, mn in MONTHS:
+        for m, mn in MONTHS.items():
             results = dict()
             actual_month = m
 
             start = perf_counter()
+            # fi: file index
             for fi in range(len(files[m])):
                 file = files[m][fi]
                 logger.info(f"Testing file {file.name} for ensemble of {', '.join(er.names)}. Tested {fi} out of {len(files[m])} files")
                 X, y = get_X_y(file)
 
-                results[file.name] = er.predict(X, y, last_month=last_month, actual_month=actual_month, file_num=fi, update=update)
+                results[file.name] = er.predict(X, y, last_month=last_month, actual_month=actual_month, file_num=fi, update=update, mutex=mutex, output=output_path.joinpath('time_elapsed.csv'))
 
                 results_temp = deepcopy(results[file.name])
                 results_temp['month'] = mn
@@ -300,9 +304,16 @@ def _test_rejection(classifiers: object, rejection_table: dict, files: list, _fr
                 save_csv(output_day.joinpath(f'{mn}.csv'), results_temp, logger=logger)
             end = perf_counter() - start
 
-            name = get_cls_name(er) if not update else f'{get_cls_name(er)}_update'
+            name = get_cls_name(er) if not update else f'{get_cls_name(er)}_update_{delay}delay'
 
-            time = {'clf': name, 'time_elapsed': end, 'type': 'test', 'month': actual_month}
+            time = {
+                    'timestamp': str(datetime.now()), 
+                    'clf': name, 
+                    'time_elapsed': end, 
+                    'type': 'test', 
+                    'month': actual_month, 
+                    'last_month': last_month
+                }
             mutex.acquire()
             save_csv(output_path.joinpath('time_elapsed.csv'), time, logger=LOGGER)
             mutex.release()
@@ -313,7 +324,7 @@ def _test_rejection(classifiers: object, rejection_table: dict, files: list, _fr
             ensemble_metrics['test_year'] = test_year
 
             save_csv(filename, ensemble_metrics, logger=LOGGER)
-            last_month = actual_month
+            last_month = format_day(int(actual_month) + 1 - delay)
 
 @timer(logger=LOGGER)
 def main_classify_rejection(update=False):
@@ -321,7 +332,7 @@ def main_classify_rejection(update=False):
     FROM = 2014
     TO = 2015
     CLASSIFIERS = [load_model(clf.name) for clf in MODELS_PATH.glob('*.model')]
-    OUTPUT = CSV_PATH.joinpath('classify_by_rejection')
+    OUTPUT = CSV_PATH.joinpath('classify_by_rejection_delay')
     CLASSIFIER_THRESHOLDS_FILES = list(CSV_PATH.joinpath("pareto_computed").glob("*.csv"))
     CLASSIFIER_THRESHOLDS = get_operation_point(CLASSIFIER_THRESHOLDS_FILES, 'error_rate', 0.05)
     N_DAYS = 7
@@ -329,11 +340,10 @@ def main_classify_rejection(update=False):
     if not OUTPUT.exists():
         OUTPUT.mkdir()
 
-    files = {month: [r.choice(get_files(FROM, VIEWS[0], month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS}
+    files = {month: [r.choice(get_files(FROM, VIEWS[0], month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS.items()}
 
     mutex = Lock()
-    Thread(target=_test_rejection, args=(CLASSIFIERS, CLASSIFIER_THRESHOLDS, files, FROM, TO, OUTPUT, LOGGER, False, mutex)).start()
-    Thread(target=_test_rejection, args=(CLASSIFIERS, CLASSIFIER_THRESHOLDS, files, FROM, TO, OUTPUT, LOGGER, True, mutex)).start()
+    Thread(target=_test_rejection, args=(CLASSIFIERS, CLASSIFIER_THRESHOLDS, files, FROM, TO, OUTPUT, LOGGER, update, mutex)).start()
 
 def _test_batch(classifier, files, output: Path, month, _from, _to):
     results = dict()
@@ -374,7 +384,7 @@ def main_classify_batch(update=False):
     if not OUTPUT.exists():
         OUTPUT.mkdir()
 
-    files = {month: [r.choice(get_files(FROM, VIEW, month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS}
+    files = {month: [r.choice(get_files(FROM, VIEW, month)['files']) for _ in range(N_DAYS)] for month, _ in MONTHS.items()}
 
     # Preparing dataset
     X = []
@@ -425,7 +435,7 @@ def main_classify_batch(update=False):
             _files = files[month]
             
             current_month = month
-            if update and current_month != last_month and current_month != '02':
+            if update and current_month != last_month and int(current_month) != '02':
             # if update:
                 LOGGER.info(f"Started training {clf_name} with month {last_month}")
                 train_files = files[last_month]
@@ -479,7 +489,7 @@ if __name__ == '__main__':
     # main_ensemble()
     # for clf in MODELS_PATH.glob('*.model'):
     #     main_rejection(clf.name)
-    # main_classify_rejection()
+    main_classify_rejection(update=False)
 
     # for file in CSV_PATH.joinpath('pareto').glob('*.csv'):
     #     if 'Classifier' in file.name:
@@ -491,4 +501,4 @@ if __name__ == '__main__':
 
     # plot_results()
 
-    main_classify_batch(update=True)
+    # main_classify_batch(update=True)
