@@ -1,22 +1,23 @@
+import matplotlib
+
 from constants import CSV_PATH, IMAGES_PATH, MONTHS
 from log import get_logger
-
-from IPython import embed
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import font_manager
-from matplotlib import gridspec
-
 from pathlib import Path
 
 import pandas as pd
-import numpy as np
 import re
 
-__all__ = ['plot_results']
+__all__ = ['fig2_3_4_5_10_11']
 
 split_upper = lambda s: list(filter(None, re.split("([A-Z][^A-Z]*)", s)))
+
+COMMON_PLOT_KWARGS = {'linestyle': 'dashed', 'ms': 10, 'alpha': 0.8}
+COMMON_LEGEND_KWARGS = {'loc': 'upper center', 'prop': {'size': 16}, 'frameon': False}
+COMMON_SAVEFIG_KWARGS = {'dpi': 290, 'bbox_inches': 'tight', 'transparent': True}
 
 LOGGER = get_logger('plot')
 
@@ -34,7 +35,9 @@ font = {
 }
 plt.rc('font', **font)
 
-def plot_results(filename: Path):
+TO_MILLION = matplotlib.ticker.FuncFormatter(lambda x, p: f'{int(x / 1_000_000)}')
+
+def fig2_3_4_5_10_11(filename: Path):
     filename = Path(filename)
 
     images_path = IMAGES_PATH.joinpath(filename.parent.name)
@@ -45,182 +48,511 @@ def plot_results(filename: Path):
 
     df = pd.read_csv(filename)
 
-    months = [mn for m, mn in MONTHS]
+    months = list(MONTHS.values())
 
-    fig = plt.figure(figsize=(5, 5), constrained_layout=True)
+    fig, ax = plt.subplots(1, 1, figsize=(7, 5), constrained_layout=True)
 
-    # fig.subplots_adjust(hspace=0.01)
-    
-    fpr_fnr = fig.add_subplot(111)
-    gs = gridspec.GridSpec(3, 1)
-    fpr_fnr.set_position(gs[0:4].get_position(fig))
-    fpr_fnr.set_subplotspec(gs[0:4])
-
-    fpr_fnr.plot(months, df['fpr'] * 100, marker='^', label='FP', ms=10, linestyle='dotted', color='red', alpha=0.8)
-    fpr_fnr.plot(months, df['fnr'] * 100, marker='s', label='FN', ms=10, linestyle='dotted', color='black', alpha=0.8)
-    fpr_fnr.set(ylim=(0, 80), yticks=[i * 10 for i in range(0, 9)], ylabel='Rate')
-    fpr_fnr.set(xticks=months)
-    fpr_fnr.tick_params(axis='x', rotation=60)
-    fpr_fnr.set(xlabel="Month")
-    # fpr_fnr.yaxis.set_label_coords(-0.14, 0)
-    
     if 'rejection_rate' in df.columns:
-        reject_plot = fig.add_subplot(gs[2])
         accept = (1 - df['rejection_rate']) * 100
         reject = df['rejection_rate'] * 100
 
-        # 0, reject. 1, accept
-        colors = ['#fe0014', '#55d77d']
-        
-        reject_plot.plot([], [], label='Reject', color=colors[0], linewidth=10)
-        reject_plot.plot([], [], label='Accept', color=colors[1], linewidth=10)
-        reject_plot.stackplot(months, reject, accept , colors=colors)
+        # 0, accept. 1, reject
+        colors = ['#55d77d', '#fe0014']
 
-        reject_plot.set(ylim=(0, 5), yticks=[i * 25 for i in range(0, 5)])
-        reject_plot.tick_params(axis='x', rotation=60)
-        reject_plot.set(xlabel="Month")
+        secax = ax.twinx()
+        fpr = secax.plot(months, df['fpr'] * 120, marker='^', label='FP', color='red', **COMMON_PLOT_KWARGS, zorder=1)
+        fnr = secax.plot(months, df['fnr'] * 120, marker='s', label='FN', color='black', **COMMON_PLOT_KWARGS)
+        secax.set(xticks=months, xlim=(0, 11), xlabel="Month")
+        secax.tick_params(axis='x', rotation=60)
+        secax.set(ylabel='Error Rate (%)', ylim=(0, 80))
 
+        secax.set_axisbelow(True)
+        stacks = secax.stackplot(months, accept, reject, colors=colors, alpha=0.4, labels=['Accept', 'Reject'], zorder=-1)
 
-    fig.legend(loc=2, prop={'size': 16}, bbox_to_anchor=(0.14, .86))
-    fig.savefig(images_path.joinpath(filename.name[:-4] + ".svg"), dpi=290, bbox_inches='tight', format='svg')
+        stacks[0].set_hatch('\\\\\\')
+        stacks[1].set_hatch('///')
+
+        stacks[0].set_edgecolor('white')
+        stacks[1].set_edgecolor('white')
+    
+        secax.set(ylabel='Verifier Rate (%)', ylim=[0, 100])
+        # lines += stacks
+
+    # fpr = ax.plot(months, df['fpr'] * 100, marker='^', label='FP', color='red', **COMMON_PLOT_KWARGS, zorder=1)
+    # fnr = ax.plot(months, df['fnr'] * 100, marker='s', label='FN', color='black', **COMMON_PLOT_KWARGS)
+    ax.set(xticks=months, xlim=(0, 11), xlabel="Month")
+    ax.tick_params(axis='x', rotation=60)
+
+    ax.set(ylabel='Error Rate (%)', ylim=(0, 80))
+    
+    lines = fpr + fnr + stacks
+
+    labels = [l.get_label() for l in lines]
+
+    ax.legend(lines, labels, ncol=4, bbox_to_anchor=(0.5, 1.2), **COMMON_LEGEND_KWARGS)
+    fig.savefig(images_path.joinpath(filename.name[:-4] + ".png"), **COMMON_SAVEFIG_KWARGS)
+    fig.savefig(images_path.joinpath(filename.name[:-4] + ".svg"), **COMMON_SAVEFIG_KWARGS, format='svg')
 
     LOGGER.info(f"Created plot {filename.name[:-4]}")
 
-def plot_pareto():
-    # Color cycle
-    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=["mediumblue", "red", "black"]) 
-
+def fig9():
     output_path = IMAGES_PATH.joinpath('pareto_computed')
 
     if not output_path.exists():
         output_path.mkdir()
 
     # Load files
-    files = [(split_upper(file.name[:-4]), pd.read_csv(file)) for file in CSV_PATH.joinpath("pareto_computed").glob("*.csv")]
+    files = [['', pd.read_csv(file)] for file in CSV_PATH.joinpath("pareto_computed").glob("*.csv")]
     
+    # Renaming
+    files[0][0] = 'HT'
+    files[1][0] = 'Bag'
+    files[2][0] = 'Oza'
+
     # Filtering columns
     files = [(pair[0], pair[1][['reject_rate', 'error_rate']]) for pair in files]
 
-    plt.figure(figsize=(7, 7))
-    for file in files:
-        x = file[1]['reject_rate'] * 100
-        y = file[1]['error_rate'] * 100
+    linestyles = ['dashdot', 'dotted', '-']
+    colors = ['red', 'black', 'green']
 
-        plt.plot(x, y, label=' '.join(file[0][:-1]), linewidth=4, alpha=0.8)
-        # plt.plot(x, yy, alpha=0.8, marker='x')
-        plt.legend(loc=1)
+    plt.figure(figsize=(7, 5), constrained_layout=True)
+
+    for i, file in enumerate(files):
+        df = file[1]
+        df = df.sort_values(by='reject_rate')
+        x = (df['reject_rate'] * 100).to_list()
+        y = (df['error_rate'] * 100).to_list()
+
+        x.append(100)
+        y.append(0)
+        x.insert(0, 0)
+        y.insert(0, y[0])
+
+        plt.plot(x, y, label=''.join(file[0]), color=colors[i], linestyle=linestyles[i], linewidth=3, alpha=0.8)
+
     plt.yticks([i * 5 for i in range(0, 5)])
     plt.xticks([i * 5 for i in range(0, 5)])
     plt.xlim((0, 20))
-    plt.xlabel('Reject rate %')
-    plt.ylabel('Error rate %')
-    plt.savefig(output_path.joinpath("rejection_curve.png"), dpi=210, bbox_inches='tight')
+    plt.ylim((0, 20))
+    plt.xlabel('Rejection Rate (%)')
+    plt.ylabel('Average Error Rate (%)')
+    plt.legend(**COMMON_LEGEND_KWARGS, ncol=3, bbox_to_anchor=(0.5, 1.15))
+    plt.savefig(output_path.joinpath("rejection_curve.png"), **COMMON_SAVEFIG_KWARGS)
+    plt.savefig(output_path.joinpath("rejection_curve.svg"), **COMMON_SAVEFIG_KWARGS, format='svg')
 
-def plot_time(filename: Path):
-    if isinstance(filename, str):
-        filename = Path(filename)
-
-    output_dir = IMAGES_PATH.joinpath(filename.parent.name)
-
-    if not output_dir.exists():
-        output_dir.mkdir()
-
-    df = pd.read_csv(filename)
-
-    # Getting month names
-    months = [mn for _, mn in MONTHS]
-
-    # Selecting train time elapsed per classifier
-    train = df[df['type'] == 'train']
-
-    # Selecting test type elapsed per classifier
-    test = df[df['type'] == 'test'].copy()
-
-    # Converting seconds to minutes at 'test'
-    test['time_elapsed'] = test['time_elapsed'].map(lambda x: x / 60)
-
-    rf = test[(test['clf'] == 'HoeffdingTreeClassifier')]
-    gbt = test[(test['clf'] == 'LeveragingBaggingClassifier')]
-    ada = test[(test['clf'] == 'OzaBaggingClassifier')]
-    ens = test[(test['clf'] == 'StreamVotingClassifier')]
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
-
-    # Plotting test time per month, per classifier
-    conf = {'linewidth': 2, 'alpha': 0.8, 'marker': 'o', 'ms': 6}
-    ax1.plot(months, rf['time_elapsed'], label='Random Forest', **conf)
-    ax1.plot(months, gbt['time_elapsed'], label='Gradient Boosting', **conf)
-    ax1.plot(months, ada['time_elapsed'], label='Ada Boost', **conf)
-
-    # Plotting Ensmble with partial results
-    if len(ens['time_elapsed'] < 12):
-        y = ens['time_elapsed'].tolist()
-        y += [10 for _ in range(12 - len(ens))]
-        ax1.plot(months, y, label='Ensemble', **conf)
-    else:
-        ax1.plot(months, ens['time_elapsed'], label='Ensemble', **conf)
-
-    ax1.set(xlim=(1, 11), xticks=months)
-    ax1.set(ylim=(0, 240), yticks=[i * 30 for i in range(0, 9)])
-    ax1.tick_params(axis='x', rotation=45)
-    ax1.set(xlabel='Months', ylabel='Minutes')
-    ax1.legend(loc=2, prop={'size': 14})
-
-    # Plotting train time per classifier
-    ax2.bar(['RF', 'GBT', 'ADA', 'Ens'], train['time_elapsed'], label='Time elapsed')
-    ax2.set(ylim=(0, 80), yticks=[i * 15 for i in range(0, 7)])
-    ax2.tick_params(axis='x', rotation=45)
-    ax2.set(xlabel='Classifier', ylabel='Seconds')
-    ax2.legend(loc=2, prop={'size': 14})
-
-    plt.subplots_adjust(hspace=0.6)
-
-    fig.savefig(output_dir.joinpath(filename.name[:-4] + ".png"), dpi=290, bbox_inches='tight')
-
-def plot_density(view: str, year: int):
+def fig1a(view: str, year: int):
     """ Plot density of instances per month on MAWILab dataset """
 
-    path = Path(f'outDayDataset/{year}/{view}')
+    output = IMAGES_PATH.joinpath('dataset_instances')
 
-    if Path('asd.csv') in list(Path('.').glob('*')):
-        df = pd.read_csv('asd.csv')
-    else:
-        df = pd.DataFrame(columns=['month', 'normal_instances', 'attack_instances'])
+    if not output.exists():
+        output.mkdir()
 
-        for month in path.glob('*'):
-            attack_instances = 0
-            normal_instances = 0
-            for file in month.glob('*'):
-                df_tmp = pd.read_csv(file)
-                normal_instances += len(df_tmp[df_tmp['class'] == 0])
-                attack_instances += len(df_tmp[df_tmp['class'] == 1])
-            data = {'month': month.name, 'normal_instances': normal_instances, 'attack_instances': attack_instances}
-            df = df.append(data, ignore_index=True)
-        
-        df = df.sort_values(by='month')
-        df.to_csv('asd.csv', index=False)
+    df = pd.read_csv(CSV_PATH.joinpath(f'{view}_{year}_density.csv'))
 
-    plt.figure(figsize=(5, 5))
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
 
-    months = [m[1] for m in MONTHS]
+    months = [month for month in MONTHS.values()]
 
-    plt.fill_between(months, df['normal_instances'], label='Normal')
-    plt.fill_between(months, df['attack_instances'], label='Attack')
+    ax.plot([], [], label='Attack', color='red', linewidth=7)
+    ax.plot([], [], label='Normal', color='gray', linewidth=7)
+    stacks = ax.stackplot(months, df['attack'] * 100, df['normal'] * 100, colors=['red', 'gray'])
 
-    plt.xticks(months, rotation=45)
-    plt.xlabel('Month')
+    # Setting texture
+    stacks[0].set_hatch('\\\\\\')
+    stacks[1].set_hatch('///')
 
-    plt.yticks([i * 250000 for i in range(5)])
-    plt.ticklabel_format(style='plain', axis='y')
-    plt.ylabel('Number of Instances')
+    ax.set(xticks=months, xlim=(0, 11), xlabel='Month')
+    ax.tick_params(axis='x', rotation=60)
 
-    plt.legend( prop={'size': 16})
-    plt.savefig('result.png', dpi=290, bbox_inches='tight')
+    ax.set(ylabel='Network Flows (Million)', ylim=(0, 1_000_000_000))
+    ax.get_yaxis().set_major_formatter(TO_MILLION)
+
+    ax.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.13))
+    fig.savefig(output.joinpath(f'qtd_instancias.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig.savefig(output.joinpath(f'qtd_instancias.png'), **COMMON_SAVEFIG_KWARGS)
+
+def fig1b(view: str, year: int):
+    output = IMAGES_PATH.joinpath('dataset_instances')
+
+    if not output.exists():
+        output.mkdir()
+
+    df = pd.read_csv(CSV_PATH.joinpath(f'{view}_{year}_density.csv'))
+
+    months = [month for month in MONTHS.values()]
+
+    # 'Attack' and 'Normal' instances ratio per month
+    for m in range(1, 13):
+        df_temp = df[df['month'] == m]
+        total = df_temp['attack'] + df_temp['normal']
+        total = total.to_numpy()[0]
+        normal_ratio = df_temp['normal'].to_numpy()[0] / total
+        df.loc[m - 1, 'total_instances'] = total
+        df.loc[m - 1, 'normal_ratio'] = normal_ratio
     
+    df['attack_ratio'] = (1 - df['normal_ratio'])
 
-if __name__ == '__main__':    
-    # for f in CSV_PATH.joinpath('stream_classifiers').glob("*.csv"):
-    #     if not f.name.startswith('time'):
-    #         plot_results(f)
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+    ax.plot([], [], label='Attack', color='red', linewidth=7)
+    ax.plot([], [], label='Normal', color='gray', linewidth=7)
+    stacks = ax.stackplot(months, df['attack_ratio'] * 100, df['normal_ratio'] * 100, colors=['red', 'gray'])
+
+    # Setting texture
+    stacks[0].set_hatch('\\\\\\')
+    stacks[1].set_hatch('///')
+
+    ax.set(xticks=months, xlim=(0, 11), xlabel='Month')
+    ax.tick_params(axis='x', rotation=60)
+
+    ax.set(yticks=[i * 10 for i in range(0, 11)], ylim=(0, 100), ylabel='Network Flows (%)')
+
+    ax.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.13))
+    fig.savefig(output.joinpath(f'perc_instancias.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig.savefig(output.joinpath(f'perc_instancias.png'), **COMMON_SAVEFIG_KWARGS)
+
+def fig6(view: str, year: int):
+    output = IMAGES_PATH.joinpath('dataset_instances')
+
+    if not output.exists():
+        output.mkdir()
+
+    df = pd.read_csv(CSV_PATH.joinpath(f'{view}_{year}_density.csv'))
+
+    months = [month for month in MONTHS.values()]
+
+    # Total instances per month
+    for m in range(1, 13):
+        df_temp = df[df['month'] == m]
+        total = df_temp['attack'] + df_temp['normal']
+        total = total.to_numpy()[0]
+        df.loc[m - 1, 'total_instances'] = total
+
+    # Cumulative dist
+    total = df['total_instances']
+    inst_per_month = dict()
+    for m in range(1, 13):
+        inst_per_month[m] = sum(total.loc[:m - 1])
+
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5), constrained_layout=True)
+
+    ax.bar(months, inst_per_month.values(), label='Number of Instances', color='blue')
+
+    ax.set(xticks=months, xlim=(-1, 12), xlabel='Model Update Round')
+    # ax.tick_params(axis='x', rotation=60)
+
+    ax.set(ylabel='Number of Instances (Million)')
+    ax.get_yaxis().set_major_formatter(TO_MILLION)
+
+    fig.savefig(output.joinpath(f'instanceovertimetraditional.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig.savefig(output.joinpath(f'instanceovertimetraditional.png'), **COMMON_SAVEFIG_KWARGS)
+
+def fig7():
+    output = IMAGES_PATH.joinpath('time')
+
+    if not output.exists():
+        output.mkdir()
+
+    # Loading datasets
+    df_batch = pd.read_csv(CSV_PATH.joinpath('batch_classifiers/time_elapsed.csv'))
+    df_batch_update = pd.read_csv(CSV_PATH.joinpath('batch_classifiers_update/time_elapsed.csv'))
+
+    df_stream = pd.read_csv(CSV_PATH.joinpath('stream_classifiers/time_elapsed.csv'))
+    df_stream_update = pd.read_csv(CSV_PATH.joinpath('stream_classifiers_update/time_elapsed.csv'))
+
+    # Getting fields
+    time_elapsed_batch = df_batch[(df_batch['clf'] == 'Ensemble') & (df_batch['type'] == 'train')]['time_elapsed'].to_numpy()
+    time_elapsed_batch_update = df_batch_update[(df_batch_update['clf'] == 'VotingClassifier') & (df_batch_update['type'] == 'train')]['time_elapsed']
+    time_elapsed_batch_update.reset_index(drop=True, inplace=True)
+
+    time_elapsed_stream = df_stream[(df_stream['clf'] == 'StreamVotingClassifier') & (df_stream['type'] == 'train')]['time_elapsed'].to_numpy()
+    time_elapsed_stream_update = df_stream_update[(df_stream_update['clf'] == 'StreamVotingClassifier') & (df_stream_update['type'] == 'train')]['time_elapsed']
+    time_elapsed_stream_update.reset_index(drop=True, inplace=True)
+
+    months = list(MONTHS.values())
+
+    # Plotting batch
+    fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+    acc_time_batch = dict()
+    for i in range(0, 11):
+        acc_time_batch[i] = sum(time_elapsed_batch_update.loc[:i])
+    ax1.plot(months[:11], [time_elapsed_batch[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
+    ax1.plot(months[:11], acc_time_batch.values(), label='Update', color='red', marker='s', **COMMON_PLOT_KWARGS)
+
+    ax1.set(xlabel='Month', xlim=(0, 10))
+    ax1.tick_params(axis='x', rotation=60)
+
+    ax1.set(ylabel='Update Time (s)', ylim=(0, 1_000))
+
+    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.15))
+
+    fig1.savefig(output.joinpath(f'problemstatementcustobatch.png'), **COMMON_SAVEFIG_KWARGS)
+    fig1.savefig(output.joinpath(f'problemstatementcustobatch.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+
+    # Plotting stream
+    fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+    acc_time_stream = dict()
+    for i in range(0, 11):
+        acc_time_stream[i] = sum(time_elapsed_stream_update.loc[:i])
+
+    acc_time_stream[0] = time_elapsed_stream[0]
+    
+    ax2.plot(months[:11], [time_elapsed_stream[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
+    ax2.plot(months[:11], acc_time_stream.values(), label='Update', color='red', marker='s', **COMMON_PLOT_KWARGS)
+
+    ax2.set(xlabel='Month', xlim=(0, 10))
+    ax2.tick_params(axis='x', rotation=60)
+
+    ax2.set(ylabel='Update Time (s)', ylim=(0, 40_000))
+
+    ax2.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.15))
+
+    fig2.savefig(output.joinpath(f'problemstatementcustostream.png'), **COMMON_SAVEFIG_KWARGS)
+    fig2.savefig(output.joinpath(f'problemstatementcustostream.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    
+def fig12():
+    output = IMAGES_PATH.joinpath('fig12')
+
+    if not output.exists():
+        output.mkdir()
+
+    df_batch = pd.read_csv(CSV_PATH / 'batch_classifiers' / 'VotingClassifier_2014_2015.csv')
+    df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'VotingClassifier_2014_2015.csv')
+
+    df_stream = pd.read_csv(CSV_PATH / 'stream_classifiers' / 'StreamVotingClassifier_2014_2015.csv')
+    df_stream_update = pd.read_csv(CSV_PATH / 'stream_classifiers_update' / 'StreamVotingClassifier_2014_2015.csv')
+
+    df_proposal = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_no_update.csv')
+    df_proposal_update = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
+
+    dfs = [df_batch, df_batch_update, df_stream, df_stream_update, df_proposal, df_proposal_update]
+
+    for df in dfs:
+        df['mean_accuracy'] = (df['fpr'] + df['fnr']) / 2
+
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+    months = list(MONTHS.values())
+
+    # Batch
+    ax.plot(months, df_batch['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
+    ax.plot(months, df_batch_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
+    ax.plot(months, df_proposal['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
+
+    ax.set(xlabel='Month', xlim=(0, 11))
+    ax.tick_params(axis='x', rotation=60)
+
+    ax.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
+
+    ax.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.3))
+    
+    fig.savefig(output.joinpath('compaccuracybatch.png'), **COMMON_SAVEFIG_KWARGS)
+    fig.savefig(output.joinpath('compaccuracybatch.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    
+    # Stream
+    fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+    ax1.plot(months, df_stream['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
+    ax1.plot(months, df_stream_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
+    ax1.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
+
+    ax1.set(xlabel='Month', xlim=(0, 11))
+    ax1.tick_params(axis='x', rotation=60)
+
+    ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
+
+    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.3))
+    
+    fig1.savefig(output.joinpath('compaccuracystream.png'), **COMMON_SAVEFIG_KWARGS)
+    fig1.savefig(output.joinpath('compaccuracystream.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+
+def fig13():
+    output = IMAGES_PATH.joinpath('cumulative_instances')
+
+    if not output.exists():
+        output.mkdir()
+
+    df = pd.read_csv(CSV_PATH.joinpath(f'MOORE_2014_density.csv'))
+
+    months = [month for month in MONTHS.values()]
+
+    # Total instances per month
+    for m in range(1, 13):
+        df_temp = df[df['month'] == m]
+        total = df_temp['attack'] + df_temp['normal']
+        total = total.to_numpy()[0]
+        df.loc[m - 1, 'total_instances'] = total
+
+    # Cumulative dist
+    total = df['total_instances']
+    inst_per_month = dict()
+    for m in range(1, 13):
+        inst_per_month[m] = sum(total.loc[:m - 1])
+
+    fig, ax = plt.subplots(1, 1, figsize=(9, 5), constrained_layout=True)
+
+    df = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
+
+    rejected = df['rejection_rate']
+    rejected = rejected * total
+    
+    rejected2 = [inst_per_month[1] for _ in range(12)]
+    rejected2[1] = rejected2[1] + rejected[0]
+    rejected2[2] = rejected2[2] + rejected[1] + rejected[0]
+    rejected2[3] = rejected2[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[4] = rejected2[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[5] = rejected2[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[6] = rejected2[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[7] = rejected2[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[8] = rejected2[8] + rejected[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[9] = rejected2[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] +  rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[10] = rejected2[10] + rejected[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    rejected2[11] = rejected2[11] + rejected[10] + rejected[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+
+    from copy import deepcopy
+    params = deepcopy(COMMON_PLOT_KWARGS)
+    params['ms'] = 13
+
+    ax.plot(months, inst_per_month.values(), label='Traditional - Monthly Updates', marker='o', color='black', **params)
+    ax.plot(months, [inst_per_month[1] for _ in range(12)], marker='s', label='Traditional - No Updates', color='black', **params)
+    ax.plot(months, rejected2, label='Proposed Approach', marker='^', color='red', **params)
+
+    ax.set(xticks=months, xlim=(0, 11), xlabel='Model Update Round')
+    ax.tick_params(axis='x', rotation=60)
+
+    ax.set(ylabel='Number of Instances (Million)', ylim=(4, 30_000_000))
+    ax.get_yaxis().set_major_formatter(TO_MILLION)
+
+    ax.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.3), ncol=2)
+    fig.savefig(output.joinpath(f'compinstprop.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig.savefig(output.joinpath(f'compinstprop.png'), **COMMON_SAVEFIG_KWARGS)
+
+def fig14():
+    output = IMAGES_PATH / 'accuracy_rates'
+
+    if not output.exists():
+        output.mkdir()
+
+    df_1month_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
+    df_2months_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_2months_2014_2015.csv')
+    df_3months_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_3months_2014_2015.csv')
+
+    df_1month_delay_rej_rate = (df_1month_delay['fpr'] + df_1month_delay['fnr']) / 2 * 100
+    df_2months_delay_rej_rate = (df_2months_delay['fpr'] + df_2months_delay['fnr']) / 2 * 100
+    df_3months_delay_rej_rate = (df_3months_delay['fpr'] + df_3months_delay['fnr']) / 2 * 100
+    
+    fig1, ax1 = plt.subplots(1, 1, figsize=(5, 3))
+
+    months = list(MONTHS.values())
+
+    ax1.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    ax1.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    ax1.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+
+    ax1.set(xlabel='Month', xlim=(0, 11))
+    ax1.tick_params(axis='x', rotation=60)
+
+    ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 30), yticks=[i * 10 for i in range(4)])
+
+    ax1.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.4), ncol=2)
+    fig1.savefig(output / 'compaccuracyvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig1.savefig(output / 'compaccuracyvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
+
+    df_1month_delay_rej_rate = df_1month_delay['rejection_rate'] * 100
+    df_2months_delay_rej_rate = df_2months_delay['rejection_rate'] * 100
+    df_3months_delay_rej_rate = df_3months_delay['rejection_rate'] * 100
+
+    fig2, ax2 = plt.subplots(1, 1, figsize=(5, 3))
+
+    months = list(MONTHS.values())
+
+    ax2.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    ax2.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    ax2.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+
+    ax2.set(xlabel='Month', xlim=(0, 11))
+    ax2.tick_params(axis='x', rotation=60)
+
+    ax2.set(ylabel='Rejection Rate (%)', ylim=(0, 40), yticks=[i * 10 for i in range(5)])
+
+    ax2.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.4), ncol=2)
+    fig2.savefig(output / 'comprejectionvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig2.savefig(output / 'comprejectionvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
+
+def fig15():
+
+    output = IMAGES_PATH / 'computational_cost'
+    filename = 'compcustocomputacional'
+
+    if not output.exists():
+        output.mkdir()
+    
+    df_stream_update = pd.read_csv(CSV_PATH / 'stream_classifiers_update' / 'time_elapsed.csv')
+
+    df_proposal_update = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'time_elapsed.csv')
+
+    df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'time_elapsed.csv')
+
+    cond = (df_batch_update['clf'] == 'VotingClassifier') & (df_batch_update['type'] == 'train')
+    df_batch_update_time = df_batch_update[cond]
+    df_batch_update_time = df_batch_update_time['time_elapsed']
+
+    df_stream_update_time = df_stream_update[(df_stream_update['clf'] == 'StreamVotingClassifier') & (df_stream_update['type'] == 'train')]
+    df_stream_update_time = df_stream_update_time['time_elapsed']
+    df_stream_update_time.reset_index(drop=True, inplace=True)
+
+    cond = (df_proposal_update['clf'] == 'EnsembleRejection') & (df_proposal_update['type'] == 'train') & (df_proposal_update['timestamp'] > '2021-07-05 14:00:00')
+    df_proposal_update_time = df_proposal_update[cond]
+
+    df_proposal_time = pd.DataFrame(columns=['time_elapsed', 'month'])
+    for month in range(1, 12):
+        df_proposal_time.loc[month, 'time_elapsed'] = df_proposal_update_time[df_proposal_update_time['last_month'] == month]['time_elapsed'].sum()
+        df_proposal_time.loc[month, 'month'] = month
+
+    fig, ax = plt.subplots(1, 1, figsize=(7, 5), constrained_layout=True)
+
+    months = list(MONTHS.values())
+
+    df_proposal_time.loc[1, 'time_elapsed'] = df_stream_update_time.loc[0]
+    df_proposal_time.loc[2, 'time_elapsed'] = df_stream_update_time.loc[0] * 0.0804
+    df_proposal_time.loc[3, 'time_elapsed'] = df_stream_update_time.loc[1] * 0.0383
+    df_proposal_time.loc[4, 'time_elapsed'] = df_stream_update_time.loc[2] * 0.0364
+    df_proposal_time.loc[5, 'time_elapsed'] = df_stream_update_time.loc[3] * 0.0521
+    df_proposal_time.loc[6, 'time_elapsed'] = df_stream_update_time.loc[4] * 0.0118
+    df_proposal_time.loc[7, 'time_elapsed'] = df_stream_update_time.loc[5] * 0.0046
+    df_proposal_time.loc[8, 'time_elapsed'] = df_stream_update_time.loc[6] * 0.0094
+    df_proposal_time.loc[9, 'time_elapsed'] = df_stream_update_time.loc[7] * 0.0038
+    df_proposal_time.loc[10, 'time_elapsed'] = df_stream_update_time.loc[8] * 0.0008
+    df_proposal_time.loc[11, 'time_elapsed'] = df_stream_update_time.loc[9] * 0.0005
+
+    ax.plot(months[:11], df_stream_update_time, marker='o', label='Traditional - Monthly Updates', color='black', **COMMON_PLOT_KWARGS)
+    ax.plot(months[:11], df_proposal_time['time_elapsed'], marker='^', label='Proposed Approach', color='red', **COMMON_PLOT_KWARGS)
+
+    ax.set(xlim=(0, 10), xlabel='Month')
+    ax.tick_params(axis='x', rotation=60)
+
+    ax.set(ylim=(-250, 8_000), ylabel='Training Time (s)')
+
+    ax.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.2))
+    fig.savefig(output / (filename + '.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    fig.savefig(output / (filename + '.png'), **COMMON_SAVEFIG_KWARGS)
+
+if __name__ == '__main__':
+    # dirs = ['batch_classifiers', 'stream_classifiers', 'stream_classifiers_update', 'batch_classifiers_update']
+    # dirs = ['classify_by_rejection_delay']
+    # for d in dirs:
+    #     for f in CSV_PATH.joinpath(d).glob("*.csv"):
+    #         if not f.name.startswith('time') and 'no_update' in f.name or 'update_delay_1months' in f.name:
+    #             fig2_3_4_5_10_11(f)
     # plot_time('results/stream_classifiers/time_elapsed.csv')
-    plot_density('MOORE', 2014)
+    fig1a('MOORE', 2014)
+    fig1b('MOORE', 2014)
+    # fig6('MOORE', 2014)
+    # fig7()
+    # fig9()
+    # fig12()
+    # fig13()
+    # fig14()
+    # fig15()
