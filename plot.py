@@ -31,7 +31,7 @@ def load_custom_fonts():
 load_custom_fonts()
 font = {
     'family': 'Palatino',
-    'size': 22,
+    'size': 20,
 }
 plt.rc('font', **font)
 
@@ -96,7 +96,7 @@ def fig2_3_4_5_10_11(filename: Path):
     LOGGER.info(f"Created plot {filename.name[:-4]}")
 
 def fig9():
-    output_path = IMAGES_PATH.joinpath('pareto_computed')
+    output_path = IMAGES_PATH.joinpath('fig9')
 
     if not output_path.exists():
         output_path.mkdir()
@@ -104,10 +104,12 @@ def fig9():
     # Load files
     files = [['', pd.read_csv(file)] for file in CSV_PATH.joinpath("pareto_computed").glob("*.csv")]
     
+    COMMON_LEGEND_KWARGS['loc'] = 'upper right'
+
     # Renaming
-    files[0][0] = 'HT'
-    files[1][0] = 'Bag'
-    files[2][0] = 'Oza'
+    files[0][0] = 'Hoeffding Tree'
+    files[1][0] = 'Leveraging Bagging'
+    files[2][0] = 'Oza Bagging'
 
     # Filtering columns
     files = [(pair[0], pair[1][['reject_rate', 'error_rate']]) for pair in files]
@@ -133,10 +135,10 @@ def fig9():
     plt.yticks([i * 5 for i in range(0, 5)])
     plt.xticks([i * 5 for i in range(0, 5)])
     plt.xlim((0, 20))
-    plt.ylim((0, 20))
+    plt.ylim((0, 15))
     plt.xlabel('Rejection Rate (%)')
     plt.ylabel('Average Error Rate (%)')
-    plt.legend(**COMMON_LEGEND_KWARGS, ncol=3, bbox_to_anchor=(0.5, 1.15))
+    plt.legend(**COMMON_LEGEND_KWARGS, ncol=1)
     plt.savefig(output_path.joinpath("rejection_curve.png"), **COMMON_SAVEFIG_KWARGS)
     plt.savefig(output_path.joinpath("rejection_curve.svg"), **COMMON_SAVEFIG_KWARGS, format='svg')
 
@@ -193,6 +195,8 @@ def fig1b(view: str, year: int):
     
     df['attack_ratio'] = (1 - df['normal_ratio'])
 
+    print(df['attack_ratio'])
+
     fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
 
     ax.plot([], [], label='Attack', color='red', linewidth=7)
@@ -237,12 +241,11 @@ def fig6(view: str, year: int):
 
     fig, ax = plt.subplots(1, 1, figsize=(10, 5), constrained_layout=True)
 
-    ax.bar(months, inst_per_month.values(), label='Number of Instances', color='blue')
+    ax.bar(months, list(map(lambda x: x * 100, inst_per_month.values())), label='Number of Instances', color='blue')
 
     ax.set(xticks=months, xlim=(-1, 12), xlabel='Model Update Round')
-    # ax.tick_params(axis='x', rotation=60)
 
-    ax.set(ylabel='Number of Instances (Million)')
+    ax.set(ylabel='Training Network Flows (Million)')
     ax.get_yaxis().set_major_formatter(TO_MILLION)
 
     fig.savefig(output.joinpath(f'instanceovertimetraditional.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
@@ -270,6 +273,9 @@ def fig7():
     time_elapsed_stream_update = df_stream_update[(df_stream_update['clf'] == 'StreamVotingClassifier') & (df_stream_update['type'] == 'train')]['time_elapsed']
     time_elapsed_stream_update.reset_index(drop=True, inplace=True)
 
+    print(time_elapsed_batch_update.mean())
+    print(time_elapsed_stream_update.mean())
+
     months = list(MONTHS.values())
 
     # Plotting batch
@@ -278,15 +284,18 @@ def fig7():
     acc_time_batch = dict()
     for i in range(0, 11):
         acc_time_batch[i] = sum(time_elapsed_batch_update.loc[:i])
-    ax1.plot(months[:11], [time_elapsed_batch[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
-    ax1.plot(months[:11], acc_time_batch.values(), label='Update', color='red', marker='s', **COMMON_PLOT_KWARGS)
+
+    args = {'prop': {'size': 16}, 'loc': 'upper left', 'ncol': 1, 'frameon': False}
+
+    ax1.plot(months[:11], [time_elapsed_batch_update[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
+    ax1.plot(months[:11], acc_time_batch.values(), label='Monthly Updates', color='red', marker='s', **COMMON_PLOT_KWARGS)
 
     ax1.set(xlabel='Month', xlim=(0, 10))
     ax1.tick_params(axis='x', rotation=60)
 
     ax1.set(ylabel='Update Time (s)', ylim=(0, 1_000))
 
-    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.15))
+    ax1.legend(**args)
 
     fig1.savefig(output.joinpath(f'problemstatementcustobatch.png'), **COMMON_SAVEFIG_KWARGS)
     fig1.savefig(output.joinpath(f'problemstatementcustobatch.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
@@ -298,17 +307,17 @@ def fig7():
     for i in range(0, 11):
         acc_time_stream[i] = sum(time_elapsed_stream_update.loc[:i])
 
-    acc_time_stream[0] = time_elapsed_stream[0]
+    acc_time_stream[0] = time_elapsed_stream_update[0]
     
-    ax2.plot(months[:11], [time_elapsed_stream[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
-    ax2.plot(months[:11], acc_time_stream.values(), label='Update', color='red', marker='s', **COMMON_PLOT_KWARGS)
+    ax2.plot(months[:11], [time_elapsed_stream_update[0] for _ in range(11)], label='No Update', color='black', marker='^', **COMMON_PLOT_KWARGS)
+    ax2.plot(months[:11], acc_time_stream.values(), label='Monthly Updates', color='red', marker='s', **COMMON_PLOT_KWARGS)
 
     ax2.set(xlabel='Month', xlim=(0, 10))
     ax2.tick_params(axis='x', rotation=60)
 
     ax2.set(ylabel='Update Time (s)', ylim=(0, 40_000))
 
-    ax2.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.15))
+    ax2.legend(**args)
 
     fig2.savefig(output.joinpath(f'problemstatementcustostream.png'), **COMMON_SAVEFIG_KWARGS)
     fig2.savefig(output.joinpath(f'problemstatementcustostream.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
@@ -318,6 +327,8 @@ def fig12():
 
     if not output.exists():
         output.mkdir()
+
+    COMMON_LEGEND_KWARGS['loc'] = 'upper left'
 
     df_batch = pd.read_csv(CSV_PATH / 'batch_classifiers' / 'VotingClassifier_2014_2015.csv')
     df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'VotingClassifier_2014_2015.csv')
@@ -340,14 +351,14 @@ def fig12():
     # Batch
     ax.plot(months, df_batch['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
     ax.plot(months, df_batch_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
-    ax.plot(months, df_proposal['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
+    ax.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
 
     ax.set(xlabel='Month', xlim=(0, 11))
     ax.tick_params(axis='x', rotation=60)
 
     ax.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
 
-    ax.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.3))
+    ax.legend(**COMMON_LEGEND_KWARGS, ncol=1)
     
     fig.savefig(output.joinpath('compaccuracybatch.png'), **COMMON_SAVEFIG_KWARGS)
     fig.savefig(output.joinpath('compaccuracybatch.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
@@ -363,7 +374,7 @@ def fig12():
 
     ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
 
-    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=2, bbox_to_anchor=(0.5, 1.3))
+    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=1)
     
     fig1.savefig(output.joinpath('compaccuracystream.png'), **COMMON_SAVEFIG_KWARGS)
     fig1.savefig(output.joinpath('compaccuracystream.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
@@ -410,6 +421,7 @@ def fig13():
     rejected2[9] = rejected2[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] +  rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
     rejected2[10] = rejected2[10] + rejected[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
     rejected2[11] = rejected2[11] + rejected[10] + rejected[9] + rejected[8] + rejected[7] + rejected[6] + rejected[5] + rejected[4] + rejected[3] + rejected[2] + rejected[1] + rejected[0]
+    print(rejected2)
 
     from copy import deepcopy
     params = deepcopy(COMMON_PLOT_KWARGS)
@@ -422,10 +434,16 @@ def fig13():
     ax.set(xticks=months, xlim=(0, 11), xlabel='Model Update Round')
     ax.tick_params(axis='x', rotation=60)
 
-    ax.set(ylabel='Number of Instances (Million)', ylim=(4, 30_000_000))
+    ax.set(ylabel='Number of Instances (Million)', ylim=(0, 30_000_000))
     ax.get_yaxis().set_major_formatter(TO_MILLION)
 
-    ax.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.3), ncol=2)
+    legend = {
+        'prop': COMMON_LEGEND_KWARGS['prop'], 
+        'frameon': COMMON_LEGEND_KWARGS['frameon'],
+        'loc': 'upper right'
+    }
+
+    ax.legend(**legend, ncol=1)
     fig.savefig(output.joinpath(f'compinstprop.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
     fig.savefig(output.joinpath(f'compinstprop.png'), **COMMON_SAVEFIG_KWARGS)
 
@@ -435,6 +453,8 @@ def fig14():
     if not output.exists():
         output.mkdir()
 
+    COMMON_LEGEND_KWARGS['loc'] = 'upper left'
+
     df_1month_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
     df_2months_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_2months_2014_2015.csv')
     df_3months_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_3months_2014_2015.csv')
@@ -443,7 +463,7 @@ def fig14():
     df_2months_delay_rej_rate = (df_2months_delay['fpr'] + df_2months_delay['fnr']) / 2 * 100
     df_3months_delay_rej_rate = (df_3months_delay['fpr'] + df_3months_delay['fnr']) / 2 * 100
     
-    fig1, ax1 = plt.subplots(1, 1, figsize=(5, 3))
+    fig1, ax1 = plt.subplots(1, 1, figsize=(4, 4))
 
     months = list(MONTHS.values())
 
@@ -456,7 +476,7 @@ def fig14():
 
     ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 30), yticks=[i * 10 for i in range(4)])
 
-    ax1.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.4), ncol=2)
+    ax1.legend(**COMMON_LEGEND_KWARGS)
     fig1.savefig(output / 'compaccuracyvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
     fig1.savefig(output / 'compaccuracyvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
 
@@ -464,7 +484,7 @@ def fig14():
     df_2months_delay_rej_rate = df_2months_delay['rejection_rate'] * 100
     df_3months_delay_rej_rate = df_3months_delay['rejection_rate'] * 100
 
-    fig2, ax2 = plt.subplots(1, 1, figsize=(5, 3))
+    fig2, ax2 = plt.subplots(1, 1, figsize=(4, 4))
 
     months = list(MONTHS.values())
 
@@ -475,9 +495,9 @@ def fig14():
     ax2.set(xlabel='Month', xlim=(0, 11))
     ax2.tick_params(axis='x', rotation=60)
 
-    ax2.set(ylabel='Rejection Rate (%)', ylim=(0, 40), yticks=[i * 10 for i in range(5)])
+    ax2.set(ylabel='Rejection Rate (%)', ylim=(-3, 40), yticks=[i * 10 for i in range(5)])
 
-    ax2.legend(**COMMON_LEGEND_KWARGS, bbox_to_anchor=(0.5, 1.4), ncol=2)
+    ax2.legend(**COMMON_LEGEND_KWARGS)
     fig2.savefig(output / 'comprejectionvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
     fig2.savefig(output / 'comprejectionvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
 
@@ -493,11 +513,11 @@ def fig15():
 
     df_proposal_update = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'time_elapsed.csv')
 
-    df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'time_elapsed.csv')
+    # df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'time_elapsed.csv')
 
-    cond = (df_batch_update['clf'] == 'VotingClassifier') & (df_batch_update['type'] == 'train')
-    df_batch_update_time = df_batch_update[cond]
-    df_batch_update_time = df_batch_update_time['time_elapsed']
+    # cond = (df_batch_update['clf'] == 'VotingClassifier') & (df_batch_update['type'] == 'train')
+    # df_batch_update_time = df_batch_update[cond]
+    # df_batch_update_time = df_batch_update_time['time_elapsed']
 
     df_stream_update_time = df_stream_update[(df_stream_update['clf'] == 'StreamVotingClassifier') & (df_stream_update['type'] == 'train')]
     df_stream_update_time = df_stream_update_time['time_elapsed']
@@ -527,6 +547,9 @@ def fig15():
     df_proposal_time.loc[10, 'time_elapsed'] = df_stream_update_time.loc[8] * 0.0008
     df_proposal_time.loc[11, 'time_elapsed'] = df_stream_update_time.loc[9] * 0.0005
 
+    print(df_stream_update_time)
+    print(df_proposal_time['time_elapsed'])
+
     ax.plot(months[:11], df_stream_update_time, marker='o', label='Traditional - Monthly Updates', color='black', **COMMON_PLOT_KWARGS)
     ax.plot(months[:11], df_proposal_time['time_elapsed'], marker='^', label='Proposed Approach', color='red', **COMMON_PLOT_KWARGS)
 
@@ -544,10 +567,10 @@ if __name__ == '__main__':
     # dirs = ['classify_by_rejection_delay']
     # for d in dirs:
     #     for f in CSV_PATH.joinpath(d).glob("*.csv"):
-    #         if not f.name.startswith('time') and 'no_update' in f.name or 'update_delay_1months' in f.name:
+    #         if not f.name.startswith('time'):
     #             fig2_3_4_5_10_11(f)
     # plot_time('results/stream_classifiers/time_elapsed.csv')
-    fig1a('MOORE', 2014)
+    # fig1a('MOORE', 2014)
     fig1b('MOORE', 2014)
     # fig6('MOORE', 2014)
     # fig7()
