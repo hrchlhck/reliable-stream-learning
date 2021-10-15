@@ -15,8 +15,8 @@ __all__ = ['fig2_3_4_5_10_11']
 
 split_upper = lambda s: list(filter(None, re.split("([A-Z][^A-Z]*)", s)))
 
-COMMON_PLOT_KWARGS = {'linestyle': 'dashed', 'ms': 10, 'alpha': 0.8}
-COMMON_LEGEND_KWARGS = {'loc': 'upper center', 'prop': {'size': 16}, 'frameon': False}
+COMMON_PLOT_KWARGS = {'linestyle': 'dashed', 'ms': 10, 'alpha': 0.8, 'zorder': 1}
+COMMON_LEGEND_KWARGS = {'loc': 3, 'prop': {'size': 16}, 'frameon': False}
 COMMON_SAVEFIG_KWARGS = {'dpi': 290, 'bbox_inches': 'tight', 'transparent': True}
 
 LOGGER = get_logger('plot')
@@ -48,9 +48,17 @@ def fig2_3_4_5_10_11(filename: Path):
 
     df = pd.read_csv(filename)
 
+    if not 'recall' in df.columns:
+        df['recall'] = df['tp'] / (df['tp'] + df['fp'])
+
+    if not 'precision' in df.columns:
+        df['precision'] = df['tp'] / (df['tp'] + df['fn'])
+
+    df['f1_score'] = 2 * ((df['recall'] * df['precision']) / (df['recall'] + df['precision']))
+
     months = list(MONTHS.values())
 
-    fig, ax = plt.subplots(1, 1, figsize=(7, 5), constrained_layout=True)
+    fig, ax = plt.subplots(1, 1, figsize=(8, 4), constrained_layout=True)
 
     if 'rejection_rate' in df.columns:
         accept = (1 - df['rejection_rate']) * 100
@@ -60,11 +68,14 @@ def fig2_3_4_5_10_11(filename: Path):
         colors = ['#55d77d', '#fe0014']
 
         secax = ax.twinx()
-        fpr = secax.plot(months, df['fpr'] * 120, marker='^', label='FP', color='red', **COMMON_PLOT_KWARGS, zorder=1)
-        fnr = secax.plot(months, df['fnr'] * 120, marker='s', label='FN', color='black', **COMMON_PLOT_KWARGS)
+        recall = secax.plot(months, df['recall'] * 100, marker='s', label='Recall', color='black', **COMMON_PLOT_KWARGS)
+        precision = secax.plot(months, df['precision'] * 100, marker='.', label='Precision', color='blue', **COMMON_PLOT_KWARGS)
+        f1 = secax.plot(months, df['f1_score'] * 100, marker='1', label='F1-Score', color='red', **COMMON_PLOT_KWARGS)
+        # fpr = secax.plot(months, df['fpr'] * 120, marker='^', label='FP', color='red', **COMMON_PLOT_KWARGS, zorder=1)
+        # fnr = secax.plot(months, df['fnr'] * 120, marker='s', label='FN', color='black', **COMMON_PLOT_KWARGS)
         secax.set(xticks=months, xlim=(0, 11), xlabel="Month")
         secax.tick_params(axis='x', rotation=60)
-        secax.set(ylabel='Error Rate (%)', ylim=(0, 80))
+        secax.set(ylabel='Error Rate (%)', ylim=(0, 100))
 
         secax.set_axisbelow(True)
         stacks = secax.stackplot(months, accept, reject, colors=colors, alpha=0.4, labels=['Accept', 'Reject'], zorder=-1)
@@ -80,18 +91,22 @@ def fig2_3_4_5_10_11(filename: Path):
 
     # fpr = ax.plot(months, df['fpr'] * 100, marker='^', label='FP', color='red', **COMMON_PLOT_KWARGS, zorder=1)
     # fnr = ax.plot(months, df['fnr'] * 100, marker='s', label='FN', color='black', **COMMON_PLOT_KWARGS)
+    recall = ax.plot(months, df['recall'] * 100, marker='s', label='Recall', color='black', **COMMON_PLOT_KWARGS)
+    precision = ax.plot(months, df['precision'] * 100, marker='.', label='Precision', color='blue', **COMMON_PLOT_KWARGS)
+    f1 = ax.plot(months, df['f1_score'] * 100, marker='1', label='F1-Score', color='red', **COMMON_PLOT_KWARGS)
+
     ax.set(xticks=months, xlim=(0, 11), xlabel="Month")
     ax.tick_params(axis='x', rotation=60)
 
-    ax.set(ylabel='Error Rate (%)', ylim=(0, 80))
+    ax.set(ylabel='Error Rate (%)', ylim=(0, 100))
     
-    lines = fpr + fnr + stacks
+    lines = recall + precision + f1 # +fpr + fnr + 
 
     labels = [l.get_label() for l in lines]
 
-    ax.legend(lines, labels, ncol=4, bbox_to_anchor=(0.5, 1.2), **COMMON_LEGEND_KWARGS)
-    fig.savefig(images_path.joinpath(filename.name[:-4] + ".png"), **COMMON_SAVEFIG_KWARGS)
-    fig.savefig(images_path.joinpath(filename.name[:-4] + ".svg"), **COMMON_SAVEFIG_KWARGS, format='svg')
+    ax.legend(lines, labels, ncol=(len(labels) // 2 + 1), bbox_to_anchor=(0.5, 1.35), **COMMON_LEGEND_KWARGS)
+    fig.savefig(images_path.joinpath(filename.name[:-4] + "_more_metrics" + ".png"), **COMMON_SAVEFIG_KWARGS)
+    fig.savefig(images_path.joinpath(filename.name[:-4] + "_more_metrics" + ".svg"), **COMMON_SAVEFIG_KWARGS, format='svg')
 
     LOGGER.info(f"Created plot {filename.name[:-4]}")
 
@@ -328,7 +343,7 @@ def fig12():
     if not output.exists():
         output.mkdir()
 
-    COMMON_LEGEND_KWARGS['loc'] = 'upper left'
+    COMMON_LEGEND_KWARGS['loc'] = 'lower left'
 
     df_batch = pd.read_csv(CSV_PATH / 'batch_classifiers' / 'VotingClassifier_2014_2015.csv')
     df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'VotingClassifier_2014_2015.csv')
@@ -343,41 +358,54 @@ def fig12():
 
     for df in dfs:
         df['mean_accuracy'] = (df['fpr'] + df['fnr']) / 2
+        df['recall'] = df['tp'] / (df['tp'] + df['fp'])
+        df['precision'] = df['tp'] / (df['tp'] + df['fn'])
+        df['f1_score'] = 2 * ((df['recall'] * df['precision']) / (df['recall'] + df['precision']))
 
-    fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
 
     months = list(MONTHS.values())
 
     # Batch
-    ax.plot(months, df_batch['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
-    ax.plot(months, df_batch_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
-    ax.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
-
-    ax.set(xlabel='Month', xlim=(0, 11))
-    ax.tick_params(axis='x', rotation=60)
-
-    ax.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
-
-    ax.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+    for df, name in [(df_batch, 'batch'), (df_batch_update, 'batch_update'), (df_proposal_update, 'proposal_update')]:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+        ax.plot(months, df['recall'] * 100, marker='s', label='Recall', color='black', **COMMON_PLOT_KWARGS)
+        ax.plot(months, df['precision'] * 100, marker='.', label='Precision', color='blue', **COMMON_PLOT_KWARGS)
+        ax.plot(months, df['f1_score'] * 100, marker='1', label='F1-Score', color='red', **COMMON_PLOT_KWARGS)
     
-    fig.savefig(output.joinpath('compaccuracybatch.png'), **COMMON_SAVEFIG_KWARGS)
-    fig.savefig(output.joinpath('compaccuracybatch.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    # ax.plot(months, df_batch['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
+    # ax.plot(months, df_batch_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
+    # ax.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
+
+        ax.set(xlabel='Month', xlim=(0, 11))
+        ax.tick_params(axis='x', rotation=60)
+
+        ax.set(ylabel='Average Error Rate (%)', ylim=(0, 100))
+
+        ax.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+        
+        fig.savefig(output.joinpath(f'compaccuracybatch_{name}_metrics.png'), **COMMON_SAVEFIG_KWARGS)
+        fig.savefig(output.joinpath(f'compaccuracybatch_{name}_metrics.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
     
     # Stream
-    fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
-    ax1.plot(months, df_stream['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
-    ax1.plot(months, df_stream_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
-    ax1.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
+    for df, name in [(df_stream, 'stream'), (df_stream_update, 'stream_update'), (df_proposal_update, 'proposal_update')]:
+        fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+        ax1.plot(months, df['recall'] * 100, marker='s', label='Recall', color='black', **COMMON_PLOT_KWARGS)
+        ax1.plot(months, df['precision'] * 100, marker='.', label='Precision', color='blue', **COMMON_PLOT_KWARGS)
+        ax1.plot(months, df['f1_score'] * 100, marker='1', label='F1-Score', color='red', **COMMON_PLOT_KWARGS)
 
-    ax1.set(xlabel='Month', xlim=(0, 11))
-    ax1.tick_params(axis='x', rotation=60)
+        # ax1.plot(months, df_stream['mean_accuracy'] * 100, label='No Update', marker='s', color='black', **COMMON_PLOT_KWARGS)
+        # ax1.plot(months, df_stream_update['mean_accuracy'] * 100, label='Update', marker='o', color='black', **COMMON_PLOT_KWARGS)
+        # ax1.plot(months, df_proposal_update['mean_accuracy'] * 100, label='Proposed', marker='^', color='red', **COMMON_PLOT_KWARGS)
 
-    ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 40))
+        ax1.set(xlabel='Month', xlim=(0, 11))
+        ax1.tick_params(axis='x', rotation=60)
 
-    ax1.legend(**COMMON_LEGEND_KWARGS, ncol=1)
-    
-    fig1.savefig(output.joinpath('compaccuracystream.png'), **COMMON_SAVEFIG_KWARGS)
-    fig1.savefig(output.joinpath('compaccuracystream.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+        ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 100))
+
+        ax1.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+        
+        fig1.savefig(output.joinpath(f'compaccuracystream_{name}_metrics.png'), **COMMON_SAVEFIG_KWARGS)
+        fig1.savefig(output.joinpath(f'compaccuracystream_{name}_metrics.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
 
 def fig13():
     output = IMAGES_PATH.joinpath('cumulative_instances')
@@ -453,7 +481,7 @@ def fig14():
     if not output.exists():
         output.mkdir()
 
-    COMMON_LEGEND_KWARGS['loc'] = 'upper left'
+    # COMMON_LEGEND_KWARGS['loc'] = 'upper left'
 
     df_1month_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
     df_2months_delay = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_2months_2014_2015.csv')
@@ -462,44 +490,55 @@ def fig14():
     df_1month_delay_rej_rate = (df_1month_delay['fpr'] + df_1month_delay['fnr']) / 2 * 100
     df_2months_delay_rej_rate = (df_2months_delay['fpr'] + df_2months_delay['fnr']) / 2 * 100
     df_3months_delay_rej_rate = (df_3months_delay['fpr'] + df_3months_delay['fnr']) / 2 * 100
+
+    dfs = [df_1month_delay, df_2months_delay, df_3months_delay]
+
+    for df in dfs:
+        df['recall'] = df['tp'] / (df['tp'] + df['fp'])
+        df['precision'] = df['tp'] / (df['tp'] + df['fn'])
+        df['f1_score'] = 2 * ((df['recall'] * df['precision']) / (df['recall'] + df['precision']))
     
-    fig1, ax1 = plt.subplots(1, 1, figsize=(4, 4))
 
     months = list(MONTHS.values())
+    for i, df in enumerate(dfs):
+        fig1, ax1 = plt.subplots(1, 1, figsize=(4, 4))
+        ax1.plot(months, df['recall'] * 100, marker='s', label='Recall', color='black', **COMMON_PLOT_KWARGS)
+        ax1.plot(months, df['precision'] * 100, marker='.', label='Precision', color='blue', **COMMON_PLOT_KWARGS)
+        ax1.plot(months, df['f1_score'] * 100, marker='1', label='F1-Score', color='red', **COMMON_PLOT_KWARGS)
+        
+        # ax1.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+        # ax1.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+        # ax1.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
 
-    ax1.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
-    ax1.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
-    ax1.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+        ax1.set(xlabel='Month', xlim=(0, 11))
+        ax1.tick_params(axis='x', rotation=60)
 
-    ax1.set(xlabel='Month', xlim=(0, 11))
-    ax1.tick_params(axis='x', rotation=60)
+        ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 100), yticks=[i * 20 for i in range(6)])
 
-    ax1.set(ylabel='Average Error Rate (%)', ylim=(0, 30), yticks=[i * 10 for i in range(4)])
+        ax1.legend(**COMMON_LEGEND_KWARGS)
+        fig1.savefig(output / f'compaccuracyvaryingtime_more_metrics_{i + 1}month_delay.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
+        fig1.savefig(output / f'compaccuracyvaryingtime_more_metrics_{i + 1}month_delay.png', **COMMON_SAVEFIG_KWARGS)
 
-    ax1.legend(**COMMON_LEGEND_KWARGS)
-    fig1.savefig(output / 'compaccuracyvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
-    fig1.savefig(output / 'compaccuracyvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
+    # df_1month_delay_rej_rate = df_1month_delay['rejection_rate'] * 100
+    # df_2months_delay_rej_rate = df_2months_delay['rejection_rate'] * 100
+    # df_3months_delay_rej_rate = df_3months_delay['rejection_rate'] * 100
 
-    df_1month_delay_rej_rate = df_1month_delay['rejection_rate'] * 100
-    df_2months_delay_rej_rate = df_2months_delay['rejection_rate'] * 100
-    df_3months_delay_rej_rate = df_3months_delay['rejection_rate'] * 100
+    # fig2, ax2 = plt.subplots(1, 1, figsize=(4, 4))
 
-    fig2, ax2 = plt.subplots(1, 1, figsize=(4, 4))
+    # months = list(MONTHS.values())
 
-    months = list(MONTHS.values())
+    # ax2.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    # ax2.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    # ax2.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
 
-    ax2.plot(months, df_1month_delay_rej_rate, label='1 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
-    ax2.plot(months, df_2months_delay_rej_rate, label='2 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
-    ax2.plot(months, df_3months_delay_rej_rate, label='3 Month Delay', marker='s', **COMMON_PLOT_KWARGS)
+    # ax2.set(xlabel='Month', xlim=(0, 11))
+    # ax2.tick_params(axis='x', rotation=60)
 
-    ax2.set(xlabel='Month', xlim=(0, 11))
-    ax2.tick_params(axis='x', rotation=60)
+    # ax2.set(ylabel='Rejection Rate (%)', ylim=(-3, 40), yticks=[i * 10 for i in range(5)])
 
-    ax2.set(ylabel='Rejection Rate (%)', ylim=(-3, 40), yticks=[i * 10 for i in range(5)])
-
-    ax2.legend(**COMMON_LEGEND_KWARGS)
-    fig2.savefig(output / 'comprejectionvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
-    fig2.savefig(output / 'comprejectionvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
+    # ax2.legend(**COMMON_LEGEND_KWARGS)
+    # fig2.savefig(output / 'comprejectionvaryingtime.svg', **COMMON_SAVEFIG_KWARGS, format='svg')
+    # fig2.savefig(output / 'comprejectionvaryingtime.png', **COMMON_SAVEFIG_KWARGS)
 
 def fig15():
 
@@ -563,19 +602,19 @@ def fig15():
     fig.savefig(output / (filename + '.png'), **COMMON_SAVEFIG_KWARGS)
 
 if __name__ == '__main__':
+    # dirs = ['classify_by_rejection', 'classify_by_rejection_delay']
     # dirs = ['batch_classifiers', 'stream_classifiers', 'stream_classifiers_update', 'batch_classifiers_update']
-    # dirs = ['classify_by_rejection_delay']
     # for d in dirs:
     #     for f in CSV_PATH.joinpath(d).glob("*.csv"):
     #         if not f.name.startswith('time'):
     #             fig2_3_4_5_10_11(f)
     # plot_time('results/stream_classifiers/time_elapsed.csv')
     # fig1a('MOORE', 2014)
-    fig1b('MOORE', 2014)
+    # fig1b('MOORE', 2014)
     # fig6('MOORE', 2014)
     # fig7()
     # fig9()
-    # fig12()
+    fig12()
     # fig13()
     # fig14()
     # fig15()
