@@ -601,6 +601,167 @@ def fig15():
     fig.savefig(output / (filename + '.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
     fig.savefig(output / (filename + '.png'), **COMMON_SAVEFIG_KWARGS)
 
+def fig16():
+    output = IMAGES_PATH.joinpath('fig16')
+
+    if not output.exists():
+        output.mkdir()
+
+    COMMON_LEGEND_KWARGS['loc'] = 'lower right'
+
+    df_batch = pd.read_csv(CSV_PATH / 'batch_classifiers' / 'VotingClassifier_2014_2015.csv')
+    df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'VotingClassifier_2014_2015.csv')
+
+    df_stream = pd.read_csv(CSV_PATH / 'stream_classifiers' / 'StreamVotingClassifier_2014_2015.csv')
+    df_stream_update = pd.read_csv(CSV_PATH / 'stream_classifiers_update' / 'StreamVotingClassifier_2014_2015.csv')
+
+    df_proposal = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_no_update.csv')
+    df_proposal_update = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
+
+    dfs = [df_batch, df_batch_update, df_stream, df_stream_update, df_proposal, df_proposal_update]
+
+    # TPR = 1 - FNR
+    # TNR = 1 - FPR
+
+    for df in dfs:
+        df['tpr'] = 1 - df['fnr']
+        df['tnr'] = 1 - df['fpr']
+        df['recall'] = df['tpr'] / (df['tpr'] + df['fnr'])
+        df['precision'] = df['tpr'] / (df['tpr'] + df['fpr'])
+        df['f1_score'] = 2 * ((df['recall'] * df['precision']) / (df['recall'] + df['precision']))
+
+    months = list(MONTHS.values())
+
+    # Batch
+    for metric in ['recall', 'f1_score']:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+        
+        v1, v2 = df_batch[metric] * 100, df_batch_update[metric] * 100
+        if metric == 'f1_score':
+            v1, v2 = df_batch[metric], df_batch_update[metric]
+
+        ax.plot(months, v1, marker='s', label='No Update', color='green', **COMMON_PLOT_KWARGS)
+        ax.plot(months, v2, marker='^', label='Update', color='blue', **COMMON_PLOT_KWARGS)
+
+        ax.set(xlabel='Month', xlim=(0, 11))
+        ax.tick_params(axis='x', rotation=60)
+        
+        ylabel = 'Average Recall Rate (%)'
+        ylim = (70, 100)
+
+        if metric == 'f1_score':
+            ylabel = 'F1-Score'
+            ylim = (0.6, 1)
+
+        ax.set(ylabel=ylabel, ylim=ylim)
+        
+        ax.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+        
+        fig.savefig(output.joinpath(f'compaccuracybatch_batch_{metric}.png'), **COMMON_SAVEFIG_KWARGS)
+        fig.savefig(output.joinpath(f'compaccuracybatch_batch_{metric}.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+    
+        # Stream
+        fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+        v1, v2 = df_stream[metric] * 100, df_stream_update[metric] * 100
+        if metric == 'f1_score':
+            v1, v2 = df_stream[metric], df_stream_update[metric]
+            
+        ax1.plot(months, v1, marker='s', label='No Update', color='green', **COMMON_PLOT_KWARGS)
+        ax1.plot(months, v2, marker='^', label='Update', color='blue', **COMMON_PLOT_KWARGS)
+
+        ax1.set(xlabel='Month', xlim=(0, 11))
+        ax1.tick_params(axis='x', rotation=60)
+
+        ylabel = 'Average Recall Rate (%)'
+        ylim = (70, 100)
+
+        if metric == 'f1_score':
+            ylabel = 'F1-Score'
+            ylim = (0.6, 1)
+
+        ax1.set(ylabel=ylabel, ylim=ylim)
+
+        ax1.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+        
+        fig1.savefig(output.joinpath(f'compaccuracystream_stream_{metric}.png'), **COMMON_SAVEFIG_KWARGS)
+        fig1.savefig(output.joinpath(f'compaccuracystream_stream_{metric}.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+        
+        # Proposal
+        fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+        v1, v2 = df_stream[metric] * 100, df_stream_update[metric] * 100
+        if metric == 'f1_score':
+            v1, v2 = df_proposal[metric], df_proposal_update[metric]
+
+        ax2.plot(months, v1, marker='s', label='No Update', color='green', **COMMON_PLOT_KWARGS)
+        ax2.plot(months, v2, marker='^', label='Update', color='blue', **COMMON_PLOT_KWARGS)
+
+        ax2.set(xlabel='Month', xlim=(0, 11))
+        ax2.tick_params(axis='x', rotation=60)
+
+        ylabel = 'Average Recall Rate (%)'
+        ylim = (70, 100)
+
+        if metric == 'f1_score':
+            ylabel = 'F1-Score'
+            ylim = (0.6, 1)
+        ax2.set(ylabel=ylabel, ylim=ylim)
+
+        ax2.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+        
+        fig2.savefig(output.joinpath(f'compaccuracystream_proposal_{metric}.png'), **COMMON_SAVEFIG_KWARGS)
+        fig2.savefig(output.joinpath(f'compaccuracystream_proposal_{metric}.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+
+def fig17():
+    output = IMAGES_PATH.joinpath('fig17')
+
+    if not output.exists():
+        output.mkdir()
+
+    COMMON_LEGEND_KWARGS['loc'] = 'lower right'
+
+    df_batch_update = pd.read_csv(CSV_PATH / 'batch_classifiers_update' / 'VotingClassifier_2014_2015.csv')
+    df_stream_update = pd.read_csv(CSV_PATH / 'stream_classifiers_update' / 'StreamVotingClassifier_2014_2015.csv')
+    df_proposal_update = pd.read_csv(CSV_PATH / 'classify_by_rejection_delay' / 'EnsembleRejection_update_delay_1months_2014_2015.csv')
+
+    months = list(MONTHS.values())
+
+    for df in [df_batch_update, df_stream_update, df_proposal_update]:
+        df['tpr'] = 1 - df['fnr']
+        df['tnr'] = 1 - df['fpr']
+        df['recall'] = df['tpr'] / (df['tpr'] + df['fnr'])
+        df['precision'] = df['tpr'] / (df['tpr'] + df['fpr'])
+        df['f1_score'] = 2 * ((df['recall'] * df['precision']) / (df['recall'] + df['precision']))
+
+    for metric in ['recall', 'f1_score']:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5), constrained_layout=True)
+
+        v1, v2, v3 = df_batch_update[metric] * 100, df_stream_update[metric] * 100, df_proposal_update[metric] * 100
+        if metric == 'f1_score':
+            v1, v2, v3 = df_batch_update[metric], df_stream_update[metric], df_proposal_update[metric]
+
+        ax.plot(months, v1, marker='s', label='Batch', color='black', **COMMON_PLOT_KWARGS)
+        ax.plot(months, v2, marker='^', label='Stream', color='gray', **COMMON_PLOT_KWARGS)
+        ax.plot(months, v3, marker='.', label='Proposal', color='red', **COMMON_PLOT_KWARGS)
+
+        ax.set(xlabel='Month', xlim=(0, 11))
+        ax.tick_params(axis='x', rotation=60)
+
+        ylabel = 'Average Recall Rate (%)'
+        ylim = (60, 100)
+        if metric == 'f1_score':
+            ylabel = 'F1-Score'
+            ylim = (0.6, 1)
+            
+        ax.set(ylabel=ylabel, ylim=ylim)
+
+        ax.legend(**COMMON_LEGEND_KWARGS, ncol=1)
+
+        fig.savefig(output.joinpath(f'comp_update_{metric}.png'), **COMMON_SAVEFIG_KWARGS)
+        fig.savefig(output.joinpath(f'comp_update_{metric}.svg'), **COMMON_SAVEFIG_KWARGS, format='svg')
+
+
 if __name__ == '__main__':
     # dirs = ['classify_by_rejection', 'classify_by_rejection_delay']
     # dirs = ['batch_classifiers', 'stream_classifiers', 'stream_classifiers_update', 'batch_classifiers_update']
@@ -614,7 +775,9 @@ if __name__ == '__main__':
     # fig6('MOORE', 2014)
     # fig7()
     # fig9()
-    fig12()
+    # fig12()
     # fig13()
     # fig14()
     # fig15()
+    fig16()
+    fig17()
