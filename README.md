@@ -25,4 +25,4 @@ A Reliable Stream Learning Intrusion Detection Model for Delayed Updates
   - [X] Avaliar custo computacional e acurácia
 
 ### Base utilizada
-- [MAWI Dataset](https://secplab.ppgia.pucpr.br/ftp/mawi/)
+- [MAWILab Dataset](https://secplab.ppgia.pucpr.br/?q=idsovertime)
