@@ -130,7 +130,6 @@ dmypy.json
 
 # Project related files
 outDayDataset/
-*.png
 .vscode/
 notebooks/
 # models/
